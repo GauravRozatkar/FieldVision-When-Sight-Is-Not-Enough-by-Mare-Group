@@ -85,3 +85,38 @@ def test_stop_releases_a_waiting_read() -> None:
     phone.stop()
     t.join(2)
     assert out == [None] and not phone.running
+
+
+
+def test_two_requests_in_flight_never_repeat_a_sentence() -> None:
+    phone = PhoneCamera(port=8793, use_https=False).start()
+    try:
+        phone.say("Person ahead, 2 metres")
+        first = post("http://127.0.0.1:8793/frame", jpeg())
+        second = post("http://127.0.0.1:8793/frame", jpeg())  # the other upload in flight
+        assert [m["text"] for m in first["say"]] == ["Person ahead, 2 metres"] and second["say"] == []
+    finally:
+        phone.stop()
+
+
+def test_phone_reliability_tolerates_hand_shake() -> None:
+    from config.settings import RELIABILITY_PHONE
+    from occhio.reliability import ReliabilityMonitor
+    rng = np.random.default_rng(0)
+    img = np.zeros((360, 640), np.float32)
+    for _ in range(25):
+        x, y = rng.integers(0, 640), rng.integers(0, 360)
+        cv2.rectangle(img, (int(x), int(y)), (int(x + 150), int(y + 100)), float(rng.normal(0, 1)), -1)
+    img = cv2.cvtColor(np.clip((img - img.mean()) / (img.std() + 1e-6) * 55 + 140, 0, 255).astype(np.uint8),
+                       cv2.COLOR_GRAY2BGR)
+    shaky = cv2.blur(img, (1, 9))  # vertical motion blur from walking with the phone
+    webcam, phone = ReliabilityMonitor(), ReliabilityMonitor(RELIABILITY_PHONE)
+    for _ in range(4):  # a short shake
+        webcam.update(shaky)
+        phone.update(shaky)
+    assert phone.reliable  # the phone settings ride it out
+    covered = np.full((360, 640, 3), 3, np.uint8)
+    frames = 0
+    while phone.update(covered).reliable:
+        frames += 1
+    assert frames <= 8  # a covered lens is still caught in about half a second at 15 FPS

@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 
 from config.profiles import (OBJECTS, SIDE_PHRASE, SOUND_WHERE, UI_TEXT, detect_classes, get_profile,
                              lines_for, next_mode, render)
-from config.settings import CAMERA, CALIBRATION_FILE, SPATIAL, TALK
+from config.settings import CAMERA, CALIBRATION_FILE, RELIABILITY_PHONE, SPATIAL, TALK
 from occhio.capture import CameraStream, VideoRecorder
 from occhio.depth import DepthEstimator, load_depth_anything
 from occhio.detector import Detector
@@ -111,7 +111,7 @@ class App:
                 print(f"[occhio] depth disabled: {exc!r}", file=sys.stderr, flush=True)
         self.calibration = Calibration() if args.calibrate is not None else Calibration.load()
         self.spatial = SpatialReasoner(self.profile, calibration=self.calibration)
-        self.reliability = ReliabilityMonitor()
+        self.reliability = ReliabilityMonitor(RELIABILITY_PHONE if args.source == "phone" else None)
         self.planner = PriorityPlanner(self.profile, self.lang)
         self.traffic = TrafficLightMonitor()
         self.step = StepDetector()

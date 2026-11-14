@@ -96,6 +96,10 @@ RELIABILITY: dict[str, Any] = {
     "reliable_above": 0.5,  # hysteresis: back to reliable only above this
 }
 
+# A phone in the hand shakes: tolerate more motion blur and react only to blur that lasts
+# (a covered lens is still caught within about half a second).
+RELIABILITY_PHONE: dict[str, Any] = {"blur": (20.0, 80.0), "ema_alpha": 0.12}
+
 PRIORITY: dict[str, Any] = {
     "cooldown_s": 3.0,  # same track + message type at most once every 3 s
     "repeat_same_text_s": 10.0,  # identical sentence for the same track not repeated sooner

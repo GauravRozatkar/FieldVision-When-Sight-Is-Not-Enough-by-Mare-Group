@@ -66,7 +66,7 @@ PAGE = """<!doctype html><html lang="__LANG__"><head><meta charset="utf-8">
 <script>
 const LANG = "__VOICE__";
 const COLOURS = {clear:"#2f9e57", caution:"#e39b16", danger:"#d93838", unreliable:"#6b6f73"};
-let running = false, audio = null, beepTimer = null, beep = null, lastSeq = 0, sent = 0, t0 = 0;
+let running = false, audio = null, beepTimer = null, beep = null, sent = 0, t0 = 0;
 const v = document.getElementById("preview"), c = document.getElementById("c"), g = c.getContext("2d");
 const err = m => document.getElementById("err").textContent = m || "";
 
@@ -91,18 +91,19 @@ function setBeep(b) {
   clearInterval(beepTimer); beepTimer = null;
   if (b) { playBeep(); beepTimer = setInterval(playBeep, 1000 / b.rate); }
 }
+// 640 px is all the detector uses; two uploads in flight hide the Wi-Fi round trip.
 async function loop() {
+  const cv = document.createElement("canvas"), cg = cv.getContext("2d");
   while (running) {
     if (v.videoWidth) {
-      const scale = Math.min(1, 960 / Math.max(v.videoWidth, v.videoHeight));
-      c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
-      g.drawImage(v, 0, 0, c.width, c.height);
-      const blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.7));
+      const scale = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight));
+      cv.width = Math.round(v.videoWidth * scale); cv.height = Math.round(v.videoHeight * scale);
+      cg.drawImage(v, 0, 0, cv.width, cv.height);
+      const blob = await new Promise(r => cv.toBlob(r, "image/jpeg", 0.65));
       try {
-        const r = await fetch("/frame?seq=" + lastSeq, {method: "POST", body: blob, cache: "no-store"});
+        const r = await fetch("/frame", {method: "POST", body: blob, cache: "no-store"});
         const d = await r.json(); sent++;
         for (const m of d.say) { speak(m.text, m.urgent); document.getElementById("say").textContent = m.text; }
-        if (d.say.length) lastSeq = d.seq; else lastSeq = Math.max(lastSeq, d.seq);
         const st = document.getElementById("status"); st.textContent = d.label; st.style.background = COLOURS[d.status] || "#3a3d40";
         setBeep(d.beep);
         if (d.vibrate && navigator.vibrate) navigator.vibrate(d.vibrate);
@@ -121,7 +122,7 @@ document.getElementById("go").onclick = async () => {
     v.srcObject = s; await v.play();
     if ("wakeLock" in navigator) { try { await navigator.wakeLock.request("screen"); } catch (e) {} }
     document.getElementById("go").style.display = "none";
-    running = true; t0 = performance.now(); loop();
+    running = true; t0 = performance.now(); loop(); setTimeout(loop, 40);
   } catch (e) { err("Camera not allowed: " + e + (window.isSecureContext ? "" : " (page is not https)")); }
 };
 </script></body></html>"""
@@ -163,6 +164,7 @@ class PhoneCamera:
         self._stopped = threading.Event()
         self._messages: deque[tuple[int, str, bool]] = deque(maxlen=20)
         self._seq = 0
+        self._delivered = 0  # messages up to this seq were already sent to the phone
         self._beep: dict | None = None
         self._status = ("clear", "")
         self._vibrate: int | None = None
@@ -184,9 +186,11 @@ class PhoneCamera:
     def set_status(self, status: str, label: str) -> None:
         self._status = (status, label)
 
-    def _reply(self, since: int) -> dict:
+    def _reply(self, since: int = 0) -> dict:
+        """Everything for the phone; each sentence is delivered exactly once."""
         with self._cond:
-            msgs = [{"text": t, "urgent": u} for s, t, u in self._messages if s > since]
+            msgs = [{"text": t, "urgent": u} for s, t, u in self._messages if s > max(since, self._delivered)]
+            self._delivered = self._seq
             vib, self._vibrate = self._vibrate, None
             return {"say": msgs, "seq": self._seq, "status": self._status[0], "label": self._status[1],
                     "beep": self._beep, "vibrate": vib}
