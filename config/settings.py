@@ -101,6 +101,12 @@ RELIABILITY: dict[str, Any] = {
     "ema_alpha": 0.25,  # smoothing; 0.25 at 25+ FPS drops to the threshold in ~0.2 s
     "unreliable_below": 0.4,
     "reliable_above": 0.5,  # hysteresis: back to reliable only above this
+    # A well-lit view with almost no edges is not a broken camera: the camera is right up
+    # against a plain surface (a wall, a door). Measured on a real iPhone: wall = brightness 133,
+    # sharpness 24, contrast 13; a shaky but normal room keeps sharpness ~300+.
+    "surface_max_sharpness": 60.0,
+    "surface_max_contrast": 25.0,
+    "surface_min_light": 0.6,  # light score (0-1): clearly not dark, not over-exposed
 }
 
 # A phone in the hand shakes: tolerate more motion blur and react only to blur that lasts

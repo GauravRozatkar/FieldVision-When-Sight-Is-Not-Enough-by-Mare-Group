@@ -36,7 +36,7 @@ class ReliabilityState:
     mean_conf: float | None  # confirmed visible tracks, None if there are none
     blocked: bool
     reliable: bool
-    reason: str  # "ok" | "blocked" | "dark" | "bright" | "blur" | "low confidence"
+    reason: str  # "ok" | "surface" | "blocked" | "dark" | "bright" | "blur" | "low confidence"
 
 
 class ReliabilityMonitor:
@@ -52,6 +52,9 @@ class ReliabilityMonitor:
         self.alpha = float(cfg["ema_alpha"])
         self.unreliable_below = float(cfg["unreliable_below"])
         self.reliable_above = float(cfg["reliable_above"])
+        self.surface_max_sharpness = float(cfg["surface_max_sharpness"])
+        self.surface_max_contrast = float(cfg["surface_max_contrast"])
+        self.surface_min_light = float(cfg["surface_min_light"])
         self.score = 1.0
         self.reliable = True
 
@@ -74,7 +77,10 @@ class ReliabilityMonitor:
         light = ramp(brightness, *self.dark) * (1.0 - ramp(brightness, *self.bright))
         sharp = ramp(sharpness, *self.blur)
         blocked = contrast < self.blocked_std
-        raw = 0.0 if blocked else min(light, sharp)
+        # Plain surface right in front: the camera works fine, there is just nothing but wall.
+        surface = (not blocked and light >= self.surface_min_light and sharpness < self.surface_max_sharpness
+                   and contrast < self.surface_max_contrast)
+        raw = 0.0 if blocked else 1.0 if surface else min(light, sharp)
         if mean_conf is not None:
             raw *= 0.6 + 0.4 * mean_conf  # low-confidence detections lower trust a little
 
@@ -86,6 +92,8 @@ class ReliabilityMonitor:
 
         if blocked:
             reason = "blocked"
+        elif surface:
+            reason = "surface"
         elif ramp(brightness, *self.dark) < 0.5:
             reason = "dark"
         elif ramp(brightness, *self.bright) > 0.5:

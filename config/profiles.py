@@ -101,7 +101,7 @@ UI_TEXT: dict[str, dict[str, str]] = {  # on-screen labels
            "k_info": "Dettagli", "k_quit": "Esci", "fps": "FPS", "sound_level": "Suono",
            "k_beeps": "Bip", "beeps_off": "BIP OFF",
            "phone_ready": "Pronto", "phone_tap": "Tocca Avvia e punta la fotocamera davanti a te",
-           "phone_start": "Avvia", "test_voice": "Prova la voce", "voice_on": "Voce attiva",
+           "phone_start": "Avvia", "test_voice": "Prova la voce", "voice_on": "Voce attiva", "wide_on": "Grandangolo: sì", "wide_off": "Grandangolo: no",
            "walking": "CAMMINI"},
     "en": {"street": "STREET", "industrial": "INDUSTRIAL", "reliable": "RELIABLE",
            "unreliable": "UNRELIABLE", "eco": "ECO", "mic": "MIC", "mic_off": "MIC OFF",
@@ -118,7 +118,7 @@ UI_TEXT: dict[str, dict[str, str]] = {  # on-screen labels
            "k_info": "Details", "k_quit": "Quit", "fps": "FPS", "sound_level": "Sound",
            "k_beeps": "Beeps", "beeps_off": "BEEPS OFF",
            "phone_ready": "Ready", "phone_tap": "Tap Start and point the camera ahead of you",
-           "phone_start": "Start", "test_voice": "Test voice", "voice_on": "Voice on",
+           "phone_start": "Start", "test_voice": "Test voice", "voice_on": "Voice on", "wide_on": "Wide angle: on", "wide_off": "Wide angle: off",
            "walking": "WALKING"},
 }
 

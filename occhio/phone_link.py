@@ -61,7 +61,7 @@ PAGE = """<!doctype html><html lang="__LANG__"><head><meta charset="utf-8">
   text-shadow:0 2px 6px #000}
  button{width:100%;font-size:22px;font-weight:700;padding:18px;border:0;border-radius:16px;
   background:#2fa36b;color:#fff;margin-top:10px}
- #voice{display:none;background:#3a3d40cc;font-size:16px;padding:10px}
+ #tools{display:none;gap:10px} #tools button{flex:1;background:#3a3d40cc;font-size:16px;padding:10px;margin-top:8px}
  #err{color:#ff8a80;font-size:15px;text-align:center;min-height:18px}
 </style></head><body><div id="stage">
 <video id="preview" playsinline muted autoplay></video>
@@ -69,10 +69,31 @@ PAGE = """<!doctype html><html lang="__LANG__"><head><meta charset="utf-8">
 <div id="top"><div id="row"><div id="name">Occhio</div><div id="net">__READY__</div></div>
 <div id="status">__READY__</div></div>
 <div id="bottom"><div id="say">__TAP__</div><div id="err"></div>
-<button id="voice">__TESTVOICE__</button><button id="go">__START__</button></div>
+<div id="tools"><button id="wide">__WIDEON__</button><button id="voice">__TESTVOICE__</button></div>
+<button id="go">__START__</button></div>
 </div>
 <script>
-const LANG = "__VOICE__", VOICE_ON_TEXT = "__VOICEON__";
+const LANG = "__VOICE__", VOICE_ON_TEXT = "__VOICEON__", WIDE_ON = "__WIDEON__", WIDE_OFF = "__WIDEOFF__";
+// Lens field of view across the long side of the picture (degrees), sent to the Mac for distances.
+const FOV_NORMAL = 69, FOV_WIDE = 108;
+let stream = null, wideId = null, normalId = null, useWide = true;
+async function openCamera() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  const size = {width: {ideal: 1280}, height: {ideal: 720}};
+  const id = useWide && wideId ? wideId : normalId;
+  stream = await navigator.mediaDevices.getUserMedia({audio: false,
+    video: id ? {deviceId: {exact: id}, ...size} : {facingMode: {ideal: "environment"}, ...size}});
+  v.srcObject = stream; await v.play();
+  document.getElementById("wide").textContent = useWide && wideId ? WIDE_ON : WIDE_OFF;
+  document.getElementById("wide").style.display = wideId ? "block" : "none";
+}
+async function findLenses() {  // labels are only filled in after the camera permission was given
+  const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+  const wide = cams.find(d => /ultra/i.test(d.label));  // "Back Ultra Wide Camera" / "...ultra grandangolare..."
+  const back = cams.find(d => /back|rear|posterior/i.test(d.label) && !/ultra|tele|dual|triple|doppia|tripla/i.test(d.label));
+  wideId = wide ? wide.deviceId : null; normalId = back ? back.deviceId : null;
+}
+function fov() { return useWide && wideId ? FOV_WIDE : FOV_NORMAL; }
 const COLOURS = {clear:"#2f9e57", caution:"#e39b16", danger:"#d93838", unreliable:"#6b6f73"};
 let running = false, audio = null, beepTimer = null, beep = null, sent = 0, t0 = 0;
 const v = document.getElementById("preview");
@@ -175,7 +196,7 @@ async function loop() {
       cv.width = Math.round(v.videoWidth * scale); cv.height = Math.round(v.videoHeight * scale);
       cg.drawImage(v, 0, 0, cv.width, cv.height);
       const blob = await new Promise(r => cv.toBlob(r, "image/jpeg", 0.65));
-      const q = "voice=" + (voiceOk ? 1 : 0) + "&speed=" + motion.speed.toFixed(2) + "&turn=" + Math.round(motion.turn)
+      const q = "fov=" + fov() + "&voice=" + (voiceOk ? 1 : 0) + "&speed=" + motion.speed.toFixed(2) + "&turn=" + Math.round(motion.turn)
               + (motion.pitch === null ? "" : "&pitch=" + motion.pitch.toFixed(1));
       try {
         const r = await fetch("/frame?" + q, {method: "POST", body: blob, cache: "no-store"});
@@ -194,6 +215,7 @@ async function loop() {
   }
 }
 document.getElementById("voice").onclick = unlockVoice;
+document.getElementById("wide").onclick = async () => { useWide = !useWide; try { await openCamera(); } catch (e) { err("" + e); } };
 document.getElementById("go").onclick = async () => {
   try {
     unlockVoice();  // must happen inside the tap, with a real sentence
@@ -202,12 +224,12 @@ document.getElementById("go").onclick = async () => {
       try { if (await DeviceMotionEvent.requestPermission() === "granted") addEventListener("devicemotion", onMotion); }
       catch (e) {}
     } else { addEventListener("devicemotion", onMotion); }
-    const s = await navigator.mediaDevices.getUserMedia({audio: false,
-      video: {facingMode: {ideal: "environment"}, width: {ideal: 1280}, height: {ideal: 720}}});
-    v.srcObject = s; await v.play();
+    await openCamera();  // first the default back camera (this asks for permission) ...
+    await findLenses();  // ... then the ultra-wide lens, if the iPhone has one
+    if (wideId) await openCamera();
     if ("wakeLock" in navigator) { try { await navigator.wakeLock.request("screen"); } catch (e) {} }
     document.getElementById("go").style.display = "none";
-    document.getElementById("voice").style.display = "block";
+    document.getElementById("tools").style.display = "flex";
     running = true; t0 = performance.now(); loop(); setTimeout(loop, 40);
   } catch (e) { err("Camera not allowed: " + e + (window.isSecureContext ? "" : " (page is not https)")); }
 };
@@ -267,6 +289,7 @@ class PhoneCamera:
         self.walk_speed = 0.0  # m/s from the phone's step counter
         self.pitch_deg: float | None = None  # camera angle below the horizon, from gravity
         self.turn_dps = 0.0  # how fast the phone is turning (deg/s)
+        self.fov_deg: float | None = None  # lens field of view across the long side (normal ~69, ultra-wide ~108)
         self._server: ThreadingHTTPServer | None = None
 
     # ------------------------------------------------------------ to the phone
@@ -322,6 +345,8 @@ class PhoneCamera:
             self.turn_dps = float(q.get("turn", self.turn_dps))
             if "pitch" in q:
                 self.pitch_deg = max(-60.0, min(80.0, float(q["pitch"])))
+            if "fov" in q:
+                self.fov_deg = max(40.0, min(130.0, float(q["fov"])))
         except ValueError:
             pass
 
@@ -355,7 +380,9 @@ class PhoneCamera:
                 .replace("__READY__", s.get("ready", "Ready")).replace("__TAP__", s.get("tap", "Tap Start"))
                 .replace("__START__", s.get("start", "Start"))
                 .replace("__TESTVOICE__", s.get("test_voice", "Test voice"))
-                .replace("__VOICEON__", s.get("voice_on", "Voice on")))
+                .replace("__VOICEON__", s.get("voice_on", "Voice on"))
+                .replace("__WIDEON__", s.get("wide_on", "Wide angle: on"))
+                .replace("__WIDEOFF__", s.get("wide_off", "Wide angle: off")))
         return html.encode()
 
     def start(self) -> "PhoneCamera":

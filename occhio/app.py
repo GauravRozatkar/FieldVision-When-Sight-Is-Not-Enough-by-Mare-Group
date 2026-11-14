@@ -37,7 +37,7 @@ from occhio.metrics import FpsCounter, MetricsLogger, StageTimes
 from occhio.overlay import GREY, _dashed_rect, draw_corridor
 from occhio.phone_link import PhoneCamera
 from occhio.power import MotionGate
-from occhio.priority import BeepPolicy, PriorityPlanner
+from occhio.priority import GENERIC_OBSTACLE, BeepPolicy, PriorityPlanner
 from occhio.reliability import ReliabilityMonitor, ReliabilityState
 from occhio.scene_llm import SceneDescriber, anthropic_call
 from occhio.scene_local import describe_detections
@@ -127,6 +127,7 @@ class App:
         self.traffic = TrafficLightMonitor()
         self.step = StepDetector()
         self.free_space = FreeSpace() if (args.source == "phone" or getattr(args, "walls", False)) else None
+        self._surface_frames = 0  # consecutive frames of "plain surface right in front"
         self.zone = DangerZone()
         self.gate = MotionGate()
         self.metrics = MetricsLogger(args.metrics or None)
@@ -310,6 +311,7 @@ class App:
                 self.phone = PhoneCamera(port=getattr(args, "phone_port", 8443), lang=self.lang, strings={
                     "ready": self.ui["phone_ready"], "tap": self.ui["phone_tap"], "start": self.ui["phone_start"],
                     "test_voice": self.ui["test_voice"], "voice_on": self.ui["voice_on"],
+                    "wide_on": self.ui["wide_on"], "wide_off": self.ui["wide_off"],
                 }).start()
                 stream = self.phone
                 print(f"[occhio] PHONE: open {self.phone.url} in Safari on the iPhone (same Wi-Fi or its hotspot), "
@@ -397,15 +399,24 @@ class App:
         if self.depth:
             self.depth.submit(image, now)
         depth_frame = self.depth.latest if self.depth else None
+        rel = self.reliability.update(image, self.tracks)
+        self.rel = rel
         if self.phone is not None:
             self.speaker.enabled = not self.args.no_voice and (self.mac_voice or not self.phone.phone_voice_ok)
             self.spatial.pitch_deg = self.phone.pitch_deg
+            if self.phone.fov_deg:  # normal or ultra-wide lens: distances depend on it
+                self.spatial.hfov_deg = self.phone.fov_deg
             self.spatial.user_speed_mps = self.phone.walk_speed
             self.planner.extra_warn_m = min(1.5, self.phone.walk_speed * 1.0)
         self.infos = self.spatial.update(self.tracks, depth_frame, self._frame_shape, now)
-        if self.free_space is not None and depth_frame is not None:
-            wall = self.free_space.update(depth_frame, self._frame_shape, self.spatial.floor_distance_at_row,
-                                          fallback_scale=self.spatial.calibration.depth_k)
+        if self.free_space is not None:
+            wall = (self.free_space.update(depth_frame, self._frame_shape, self.spatial.floor_distance_at_row,
+                                           fallback_scale=self.spatial.calibration.depth_k)
+                    if depth_frame is not None else None)
+            # Camera right up against a plain wall: no edges, no depth structure, but well lit.
+            self._surface_frames = self._surface_frames + 1 if self.rel.reason == "surface" else 0
+            if self._surface_frames >= 8:  # about half a second
+                wall = 0.5
             nearer = any(i.confirmed and i.in_corridor and i.distance_m is not None and i.distance_m <= (wall or 0) + 0.5
                          for i in self.infos)
             if wall is not None and not nearer:  # something big in the path the detector has no name for
@@ -415,8 +426,6 @@ class App:
                     distance_m=wall, distance_source="depth", approach_mps=approach, lateral_mps=0.0,
                     speed_mps=approach, fast=False, ttc_s=wall / approach if approach >= 0.3 else None,
                     in_corridor=True, x_norm=0.5))
-        rel = self.reliability.update(image, self.tracks)
-        self.rel = rel
         message = self.planner.plan(self.infos, rel, now)
         if message is not None:
             self.say(message.text, message.urgent, message.kind, message.track_id, now)
@@ -447,7 +456,8 @@ class App:
             self.phone.set_beep(target)
         self._beeping = target is not None
         danger_ids = {i.track_id for i in self.infos
-                      if i.confirmed and i.distance_m is not None and i.cls_name in self.profile["classes"]
+                      if i.confirmed and i.distance_m is not None
+                      and (i.cls_name in self.profile["classes"] or i.cls_name == GENERIC_OBSTACLE)
                       and self.planner.is_danger(i)}
         if self.phone is not None:
             self.phone.set_boxes(self._phone_boxes(danger_ids))
@@ -504,7 +514,7 @@ class App:
 
         labels: list[Label] = []
         info_by_id = {i.track_id: i for i in self.infos}
-        obstacles = set(self.profile["classes"])
+        obstacles = set(self.profile["classes"]) | {GENERIC_OBSTACLE}  # incl. walls (no track, no box)
         for t in self.tracks:
             if t.cls_name not in obstacles:
                 continue
@@ -596,7 +606,7 @@ class App:
             status_label=u[f"status_{status}"], now_text=caption or u["waiting"], now_urgent=urgent, fps=fps,
             chips=chips, radar=[i for i in self.infos if i.cls_name in obstacles], danger_ids=danger_ids,
             nearby=nearby, recent=list(self.event_log), warn_m=warn,
-            danger_m=float(self.profile["danger_distance_m"]), hfov_deg=float(CAMERA["hfov_deg"]),
+            danger_m=float(self.profile["danger_distance_m"]), hfov_deg=float(self.spatial.hfov_deg),
             sound_db=self.sound.analyzer.db if self.sound.enabled else -120.0, sound_last=self.sound_last,
             keys=[("d", u["k_describe"]), ("t", u["k_read"]), ("v", u["k_voice"]), ("m", u["k_mode"]),
                   ("b", u["k_beeps"]), ("i", u["k_info"]), ("q", u["k_quit"])],
