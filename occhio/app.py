@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 import time
 from collections import deque
 from datetime import datetime
@@ -24,7 +25,7 @@ from dotenv import load_dotenv
 
 from config.profiles import (OBJECTS, SIDE_PHRASE, SOUND_WHERE, UI_TEXT, detect_classes, get_profile,
                              lines_for, next_mode, render)
-from config.settings import CAMERA, CALIBRATION_FILE, RELIABILITY_PHONE, SPATIAL, TALK
+from config.settings import CAMERA, CALIBRATION_FILE, DETECTOR, RELIABILITY_PHONE, SPATIAL, TALK
 from occhio.capture import CameraStream, VideoRecorder
 from occhio.depth import DepthEstimator, load_depth_anything
 from occhio.detector import Detector
@@ -101,7 +102,14 @@ class App:
         self.ui = UI_TEXT[self.lang]
 
         print("[occhio] loading detector...", flush=True)
-        self.detector = Detector(detect_classes(self.profile))
+        size = getattr(args, "model", "auto")
+        size = ("s" if args.source == "phone" else "n") if size == "auto" else size
+        model_path = DETECTOR["models"][size]
+        if size == "s" and not Path(model_path).exists():
+            print("[occhio] yolo11s.pt not found: using yolo11n", flush=True)
+            size, model_path = "n", DETECTOR["models"]["n"]
+        self.detector_size = size
+        self.detector = Detector(detect_classes(self.profile), {"model": model_path})
         self.tracks_mgr = TrackManager()
         self.depth: DepthEstimator | None = None
         if not args.no_depth:
@@ -311,6 +319,7 @@ class App:
             self.close()
             return 1
         print(f"[occhio] mode={self.mode} lang={self.lang} source={args.source!r} device={self.detector.device} "
+              f"model=yolo11{self.detector_size} "
               f"depth={'on' if self.depth else 'off'} voice={'off' if args.no_voice else 'on'} "
               f"beeps={'on' if self.beeper.enabled else 'off'} sound={'on' if self.sound.enabled else 'off'}"
               f"{' (stereo)' if self.sound.stereo else ''} llm={self.llm_backend}"

@@ -12,6 +12,10 @@ PROJECT_DIR = CONFIG_DIR.parent
 
 DETECTOR: dict[str, Any] = {
     "model": str(PROJECT_DIR / "yolo11n.pt"),
+    # yolo11n: 16 ms/frame on the M5 Air, COCO mAP 39.5 -> webcam / video (keeps 20+ FPS).
+    # yolo11s: 34 ms/frame, COCO mAP 47.0 (fewer wrong labels) -> phone mode, where Wi-Fi
+    # delivers a frame only every 65-100 ms anyway. Choose with --model n|s.
+    "models": {"n": str(PROJECT_DIR / "yolo11n.pt"), "s": str(PROJECT_DIR / "yolo11s.pt")},
     "device": "mps",  # falls back to cpu when MPS is unavailable
     "imgsz": 640,
     "tracker": str(CONFIG_DIR / "bytetrack_occhio.yaml"),

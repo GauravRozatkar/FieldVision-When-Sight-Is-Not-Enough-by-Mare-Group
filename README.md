@@ -115,6 +115,9 @@ python main.py --source phone        # prints e.g. https://10.11.101.189:8443
 3. Tap **Start** and allow the camera. Hold or wear the phone with the back camera forward.
 
 Measured with a simulated phone on the demo video: 30 frames/s sent, 13 ms round trip per frame.
+Phone mode uses the more accurate **yolo11s** detector (34 ms/frame, COCO mAP 47.0, fewer wrong
+labels); webcam and video use **yolo11n** (16 ms/frame, mAP 39.5) to keep 20+ FPS. Override with
+`--model n` or `--model s`.
 `--mac-voice` also speaks on the Mac.
 
 ## iPhone as a Mac camera (Continuity Camera, if macOS allows it)

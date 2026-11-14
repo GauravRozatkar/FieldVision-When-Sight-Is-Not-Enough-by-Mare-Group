@@ -95,3 +95,20 @@ def test_same_id_after_walking_behind_a_chair(detector, bus: np.ndarray) -> None
     assert len(ids_before) == 1, f"ID switched before occlusion: {ids_before}"
     assert saw_hidden, "track never went hidden behind the occluder"
     assert ids_after == ids_before, f"ID changed after occlusion: {ids_before} -> {ids_after}"
+
+
+
+@pytest.mark.skipif(not (ROOT / "yolo11s.pt").exists(), reason="needs yolo11s.pt")
+def test_more_accurate_model_finds_the_same_people() -> None:
+    from occhio.detector import Detector
+    bus = cv2.imread(str(ROOT / "bus.jpg"))
+    small = Detector(PROFILES["street"]["classes"], {"model": str(ROOT / "yolo11s.pt")})
+    names = [d.cls_name for d in small.detect(bus)]
+    assert names.count("person") >= 4 and "bus" in names
+
+
+def test_model_choice() -> None:
+    import main
+    from occhio.app import App  # noqa: F401
+    assert main.parse_args(["--source", "phone"]).model == "auto"
+    assert main.parse_args(["--model", "s"]).model == "s"
