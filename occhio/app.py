@@ -444,6 +444,8 @@ class App:
         danger_ids = {i.track_id for i in self.infos
                       if i.confirmed and i.distance_m is not None and i.cls_name in self.profile["classes"]
                       and self.planner.is_danger(i)}
+        if self.phone is not None:
+            self.phone.set_boxes(self._phone_boxes(danger_ids))
         if self.vibration:
             level = 3 if danger_ids else 0 if target is None else 2 if target[0] >= 3.5 else 1
             self.vibration.set(level, self.caption[0])
@@ -453,6 +455,25 @@ class App:
 
         self.draw(image, danger_ids, fps_counter.tick(), stages)
         return True
+
+    def _phone_boxes(self, danger_ids: set[int]) -> list[dict]:
+        """Confirmed objects for the phone's overlay, in fractions of the frame."""
+        fh, fw = self._frame_shape
+        warn = float(self.profile["warn_distance_m"])
+        info_by_id = {i.track_id: i for i in self.infos}
+        out = []
+        for t in self.tracks:
+            if t.cls_name not in self.profile["classes"] or not t.visible or t.status is not TrackStatus.CONFIRMED:
+                continue
+            info = info_by_id.get(t.track_id)
+            dist = info.distance_m if info is not None else None
+            colour = "#d93838" if t.track_id in danger_ids else "#e39b16" if dist is not None and dist <= warn else "#2f9e57"
+            x1, y1, x2, y2 = t.box
+            out.append({"x1": round(max(0.0, x1 / fw), 4), "y1": round(max(0.0, y1 / fh), 4),
+                        "x2": round(min(1.0, x2 / fw), 4), "y2": round(min(1.0, y2 / fh), 4),
+                        "label": self._object_name(t.cls_name) + (f" {dist:.1f} m" if dist is not None else ""),
+                        "c": colour})
+        return out
 
     def _object_name(self, cls_name: str) -> str:
         name = OBJECTS[self.lang].get(cls_name, cls_name)

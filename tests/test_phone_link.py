@@ -133,3 +133,15 @@ def test_numpy_values_from_the_pipeline_do_not_break_the_reply() -> None:
         assert reply["beep"] == {"rate": 2.5, "pan": -0.3, "freq": 440}
     finally:
         phone.stop()
+
+
+def test_boxes_are_sent_to_the_phone() -> None:
+    phone = PhoneCamera(port=8791, use_https=False).start()
+    try:
+        assert post("http://127.0.0.1:8791/frame", jpeg())["boxes"] == []
+        phone.set_boxes([{"x1": 0.2, "y1": 0.3, "x2": 0.6, "y2": 0.9, "label": "Person 1.2 m", "c": "#d93838"}])
+        assert post("http://127.0.0.1:8791/frame", jpeg())["boxes"][0]["label"] == "Person 1.2 m"
+        page = phone.page().decode()
+        assert "drawBoxes(d.boxes)" in page and 'id="boxes"' in page and "object-fit:contain" in page
+    finally:
+        phone.stop()

@@ -44,29 +44,32 @@ PAGE = """<!doctype html><html lang="__LANG__"><head><meta charset="utf-8">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Occhio</title>
 <style>
- :root{--bg:#141618;--fg:#f4f4f4;--muted:#a0a4a8}
+ :root{--bg:#000;--fg:#f4f4f4;--muted:#c0c4c8}
  *{box-sizing:border-box} html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
- font-family:-apple-system,system-ui,sans-serif}
- #wrap{display:flex;flex-direction:column;height:100%;padding:env(safe-area-inset-top) 16px 16px}
- #top{display:flex;justify-content:space-between;align-items:center;padding:12px 0}
- #name{font-weight:700;font-size:22px} #net{color:var(--muted);font-size:14px;text-align:right}
- #status{border-radius:22px;padding:22px 16px;text-align:center;font-weight:800;font-size:44px;
-  letter-spacing:1px;background:#3a3d40;transition:background .2s}
- #say{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;
-  font-size:30px;font-weight:600;padding:12px;line-height:1.25}
- #preview{width:100%;max-height:26vh;object-fit:cover;border-radius:14px;opacity:.85;background:#000}
- button{width:100%;font-size:24px;font-weight:700;padding:20px;border:0;border-radius:18px;
-  background:#2fa36b;color:#fff;margin-top:12px}
- #voice{display:none;background:#3a3d40;font-size:18px;padding:12px}
- #err{color:#ff8a80;font-size:16px;text-align:center;min-height:20px}
-</style></head><body><div id="wrap">
-<div id="top"><div id="name">Occhio</div><div id="net">__READY__</div></div>
-<div id="status">__READY__</div>
-<div id="say">__TAP__</div>
+ font-family:-apple-system,system-ui,sans-serif;overflow:hidden}
+ #stage{position:fixed;inset:0}
+ #preview,#boxes{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+ #top{position:absolute;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;
+  display:flex;flex-direction:column;gap:8px;background:linear-gradient(#000c,#0000)}
+ #row{display:flex;justify-content:space-between;align-items:center}
+ #name{font-weight:700;font-size:20px} #net{color:var(--muted);font-size:13px;text-align:right}
+ #status{border-radius:18px;padding:10px 14px;text-align:center;font-weight:800;font-size:30px;
+  letter-spacing:1px;background:#3a3d40cc;transition:background .2s}
+ #bottom{position:absolute;left:0;right:0;bottom:0;padding:14px 14px calc(env(safe-area-inset-bottom) + 12px);
+  background:linear-gradient(#0000,#000d 35%)}
+ #say{text-align:center;font-size:26px;font-weight:700;line-height:1.25;min-height:34px;
+  text-shadow:0 2px 6px #000}
+ button{width:100%;font-size:22px;font-weight:700;padding:18px;border:0;border-radius:16px;
+  background:#2fa36b;color:#fff;margin-top:10px}
+ #voice{display:none;background:#3a3d40cc;font-size:16px;padding:10px}
+ #err{color:#ff8a80;font-size:15px;text-align:center;min-height:18px}
+</style></head><body><div id="stage">
 <video id="preview" playsinline muted autoplay></video>
-<div id="err"></div>
-<button id="voice">__TESTVOICE__</button>
-<button id="go">__START__</button>
+<canvas id="boxes"></canvas>
+<div id="top"><div id="row"><div id="name">Occhio</div><div id="net">__READY__</div></div>
+<div id="status">__READY__</div></div>
+<div id="bottom"><div id="say">__TAP__</div><div id="err"></div>
+<button id="voice">__TESTVOICE__</button><button id="go">__START__</button></div>
 </div>
 <script>
 const LANG = "__VOICE__", VOICE_ON_TEXT = "__VOICEON__";
@@ -144,6 +147,25 @@ function onMotion(e) {
   if (r && r.alpha !== null) motion.turn = Math.hypot(r.alpha, r.beta, r.gamma);
 }
 
+// ---- detection boxes from the Mac, drawn over the picture
+const bc = document.getElementById("boxes"), bg = bc.getContext("2d");
+function drawBoxes(boxes) {
+  const dpr = window.devicePixelRatio || 1, W = bc.clientWidth, H = bc.clientHeight;
+  if (bc.width !== W * dpr || bc.height !== H * dpr) { bc.width = W * dpr; bc.height = H * dpr; }
+  bg.setTransform(dpr, 0, 0, dpr, 0, 0); bg.clearRect(0, 0, W, H);
+  if (!v.videoWidth || !boxes) return;
+  const s = Math.min(W / v.videoWidth, H / v.videoHeight), vw = v.videoWidth * s, vh = v.videoHeight * s;
+  const ox = (W - vw) / 2, oy = (H - vh) / 2;
+  bg.font = "600 16px -apple-system, system-ui, sans-serif"; bg.lineWidth = 3;
+  for (const b of boxes) {
+    const x = ox + b.x1 * vw, y = oy + b.y1 * vh, w = (b.x2 - b.x1) * vw, h = (b.y2 - b.y1) * vh;
+    bg.strokeStyle = b.c; bg.strokeRect(x, y, w, h);
+    const tw = bg.measureText(b.label).width + 14, ty = Math.max(oy, y - 26);
+    bg.fillStyle = b.c; bg.beginPath(); bg.roundRect ? bg.roundRect(x, ty, tw, 24, 7) : bg.rect(x, ty, tw, 24); bg.fill();
+    bg.fillStyle = "#fff"; bg.fillText(b.label, x + 7, ty + 17);
+  }
+}
+
 // ---- frames out, guidance in (two uploads in flight hide the Wi-Fi round trip)
 async function loop() {
   const cv = document.createElement("canvas"), cg = cv.getContext("2d");
@@ -161,6 +183,7 @@ async function loop() {
         for (const m of d.say) { speak(m.text, m.urgent); document.getElementById("say").textContent = m.text; }
         const st = document.getElementById("status"); st.textContent = d.label; st.style.background = COLOURS[d.status] || "#3a3d40";
         setBeep(d.beep);
+        drawBoxes(d.boxes);
         if (d.vibrate && navigator.vibrate) navigator.vibrate(d.vibrate);
         const fps = Math.round(sent / ((performance.now() - t0) / 1000));
         document.getElementById("net").textContent = fps + " fps" + (motion.speed > 0.2 ? " · " + motion.speed.toFixed(1) + " m/s" : "")
@@ -236,6 +259,7 @@ class PhoneCamera:
         self._seq = 0
         self._delivered = 0  # messages up to this seq were already sent to the phone
         self._beep: dict | None = None
+        self._boxes: list[dict] = []
         self._status = ("clear", "")
         self._vibrate: int | None = None
         self.last_frame_time: float | None = None
@@ -258,6 +282,10 @@ class PhoneCamera:
         self._beep = None if target is None else {"rate": round(float(target[0]), 2),
                                                    "pan": round(float(target[1]), 2), "freq": int(round(target[2]))}
 
+    def set_boxes(self, boxes: list[dict]) -> None:
+        """[{x1, y1, x2, y2 (fractions of the frame), label, c (CSS colour)}] drawn on the phone."""
+        self._boxes = boxes
+
     def set_status(self, status: str, label: str) -> None:
         self._status = (str(status), str(label))
 
@@ -268,7 +296,7 @@ class PhoneCamera:
             self._delivered = self._seq
             vib, self._vibrate = self._vibrate, None
             return {"say": msgs, "seq": self._seq, "status": self._status[0], "label": self._status[1],
-                    "beep": self._beep, "vibrate": vib}
+                    "beep": self._beep, "vibrate": vib, "boxes": self._boxes}
 
     # ------------------------------------------------------------- from the phone
     def _receive(self, jpeg: bytes) -> bool:
