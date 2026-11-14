@@ -33,6 +33,7 @@ from occhio.hud import (AMBER, BLUE, CAM_H, CAM_W, GREEN, RED, YELLOW, HudState,
                         draw_light, draw_zone, fit_geometry, to_camera_norm, track_label)
 from occhio.metrics import FpsCounter, MetricsLogger, StageTimes
 from occhio.overlay import GREY, _dashed_rect, draw_corridor
+from occhio.phone_link import PhoneCamera
 from occhio.power import MotionGate
 from occhio.priority import BeepPolicy, PriorityPlanner
 from occhio.reliability import ReliabilityMonitor, ReliabilityState
@@ -123,10 +124,14 @@ class App:
         self.sound_last = ""
         self._pending: deque[tuple[str, Any, Any]] = deque()  # filled by other threads
 
-        voice_on = not args.no_voice
-        self.speaker = Speaker(self.lang, enabled=voice_on, on_spoken=self._on_spoken).start()
-        self.beeper = Beeper(enabled=voice_on).start()
-        self.beeps_on = voice_on and not getattr(args, "no_beeps", False)  # 'b' toggles
+        # With --source phone the phone speaks and beeps (the Mac may be in a bag); --mac-voice adds the Mac.
+        self.phone_mode = args.source == "phone"
+        self.phone: PhoneCamera | None = None
+        voice_wanted = not args.no_voice
+        mac_voice = voice_wanted and (not self.phone_mode or getattr(args, "mac_voice", False))
+        self.speaker = Speaker(self.lang, enabled=mac_voice, on_spoken=self._on_spoken).start()
+        self.beeper = Beeper(enabled=mac_voice).start()
+        self.beeps_on = voice_wanted and not getattr(args, "no_beeps", False)  # 'b' toggles
         self.beep_policy = BeepPolicy(self.profile)
         has_key = bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
         self.llm_backend = choose_backend(getattr(args, "llm", "auto"), has_key, is_cached())
@@ -143,7 +148,7 @@ class App:
                                     say=lambda text: self.speaker.say(text, urgent=True),
                                     listening_line=lines_for(self.profile, self.lang)["listening"])
         self.sound = SoundMonitor(lambda kind, side: self._pending.append(("sound", kind, side)),
-                                  enabled=not args.no_sound,
+                                  enabled=not args.no_sound and not self.phone_mode,  # Mac mic is in the bag
                                   is_self_audio=lambda: self.beeper.target is not None or self.speaker.busy).start()
         self.vibration = VibrationServer(args.vibrate).start() if args.vibrate else None
         self.recorder = VideoRecorder(args.record) if args.record else None
@@ -159,6 +164,8 @@ class App:
     def _on_spoken(self, text: str, urgent: bool) -> None:  # Speaker callback (any thread)
         self.event_log.append((datetime.now().strftime("%H:%M:%S"), text, urgent))
         self.caption = (text, urgent)
+        if self.phone is not None and not self.args.no_voice:
+            self.phone.say(text, urgent)
         print(f"[voice]{' (urgent)' if urgent else ''} {text}", flush=True)
 
     def say(self, text: str, urgent: bool = False, kind: str = "", track_id: int | None = None,
@@ -285,7 +292,15 @@ class App:
     def run(self) -> int:
         args = self.args
         try:
-            stream = CameraStream(args.source, rotate=getattr(args, "rotate", 0)).start()
+            if self.phone_mode:
+                self.phone = PhoneCamera(port=getattr(args, "phone_port", 8443), lang=self.lang, strings={
+                    "ready": self.ui["phone_ready"], "tap": self.ui["phone_tap"], "start": self.ui["phone_start"],
+                }).start()
+                stream = self.phone
+                print(f"[occhio] PHONE: open {self.phone.url} in Safari on the iPhone (same Wi-Fi or its hotspot), "
+                      "accept the certificate warning once, tap Start", flush=True)
+            else:
+                stream = CameraStream(args.source, rotate=getattr(args, "rotate", 0)).start()
         except RuntimeError as exc:
             print(f"[occhio] {exc}", file=sys.stderr)
             self.close()
@@ -392,6 +407,8 @@ class App:
 
         target = self.beep_policy.update(self.infos, rel, now) if self.beeps_on else None
         self.beeper.set_target(*target) if target else self.beeper.set_target(None)
+        if self.phone is not None:
+            self.phone.set_beep(target)
         self._beeping = target is not None
         danger_ids = {i.track_id for i in self.infos
                       if i.confirmed and i.distance_m is not None and i.cls_name in self.profile["classes"]
@@ -479,6 +496,8 @@ class App:
             status = "caution"
         else:
             status = "clear"
+        if self.phone is not None:
+            self.phone.set_status(status, self.ui[f"status_{status}"])
         nearby = []
         for i in sorted((i for i in self.infos if i.confirmed and i.cls_name in obstacles and i.distance_m is not None),
                         key=lambda i: i.distance_m)[:4]:
@@ -543,6 +562,8 @@ class App:
             self.depth.stop()
         if self.vibration:
             self.vibration.stop()
+        if self.phone is not None:
+            self.phone.stop()
         if self.recorder:
             self.recorder.close()
             print(f"[occhio] recorded {self.recorder.written} frames to {self.recorder.path}"

@@ -98,7 +98,26 @@ python main.py --source demo.mp4 --simulate-keys "25.3:d,27.1:m"
 **Record a real test once, replay it many times:** `python main.py --source 0 --record walk.mp4`,
 then `python main.py --source walk.mp4`.
 
-## iPhone as the camera (Continuity Camera)
+## iPhone in the hand: Safari, no app to install
+
+The phone is what the user holds: it films, speaks the warnings, beeps left/right and shows
+CLEAR / CAUTION / DANGER in big colours. The Mac runs the AI and can stay in a backpack.
+
+```bash
+python main.py --source phone        # prints e.g. https://10.11.101.189:8443
+```
+
+1. Phone and Mac on the same Wi-Fi. If the venue Wi-Fi blocks devices from seeing each other,
+   turn on the iPhone's Personal Hotspot and connect the Mac to it.
+2. Open the printed address in **Safari** on the iPhone. The first time Safari says
+   "This Connection Is Not Private" (our certificate is made on the Mac): Show Details,
+   visit this website, Visit Website.
+3. Tap **Start** and allow the camera. Hold or wear the phone with the back camera forward.
+
+Measured with a simulated phone on the demo video: 30 frames/s sent, 13 ms round trip per frame.
+`--mac-voice` also speaks on the Mac.
+
+## iPhone as a Mac camera (Continuity Camera, if macOS allows it)
 
 The iPhone is the eye (worn on the chest), the Mac does the AI (in a backpack or on a table).
 Needs iOS 16+ and macOS 13+, the same Apple ID on both, Wi-Fi and Bluetooth on.

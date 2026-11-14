@@ -91,7 +91,9 @@ UI_TEXT: dict[str, dict[str, str]] = {  # on-screen labels
            "nothing": "Niente nelle vicinanze", "waiting": "In ascolto della scena...",
            "k_describe": "Descrivi", "k_read": "Leggi", "k_voice": "Voce", "k_mode": "Modo",
            "k_info": "Dettagli", "k_quit": "Esci", "fps": "FPS", "sound_level": "Suono",
-           "k_beeps": "Bip", "beeps_off": "BIP OFF"},
+           "k_beeps": "Bip", "beeps_off": "BIP OFF",
+           "phone_ready": "Pronto", "phone_tap": "Tocca Avvia e punta la fotocamera davanti a te",
+           "phone_start": "Avvia"},
     "en": {"street": "STREET", "industrial": "INDUSTRIAL", "reliable": "RELIABLE",
            "unreliable": "UNRELIABLE", "eco": "ECO", "mic": "MIC", "mic_off": "MIC OFF",
            "listening": "LISTENING...", "thinking": "THINKING...", "describing": "DESCRIBING...",
@@ -105,7 +107,9 @@ UI_TEXT: dict[str, dict[str, str]] = {  # on-screen labels
            "nothing": "Nothing nearby", "waiting": "Watching the way ahead...",
            "k_describe": "Describe", "k_read": "Read", "k_voice": "Voice", "k_mode": "Mode",
            "k_info": "Details", "k_quit": "Quit", "fps": "FPS", "sound_level": "Sound",
-           "k_beeps": "Beeps", "beeps_off": "BEEPS OFF"},
+           "k_beeps": "Beeps", "beeps_off": "BEEPS OFF",
+           "phone_ready": "Ready", "phone_tap": "Tap Start and point the camera ahead of you",
+           "phone_start": "Start"},
 }
 
 PROFILES: dict[str, Profile] = {
