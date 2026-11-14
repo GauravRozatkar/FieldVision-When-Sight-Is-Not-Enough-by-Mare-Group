@@ -1,0 +1,417 @@
+# Occhio – The Big Hack 2026 build plan
+
+Nov 14, 2026 · @vhs
+
+## 1. Overview
+
+We build **Occhio**, a camera app that tells blind people, by voice, what is around them, for the Mare Group FieldVision challenge. The same engine switches to an Industrial mode for aerospace and factory safety.
+
+**The problem.** A white cane senses about 1 metre ahead, at ground level. It cannot warn about a bike coming fast, a person walking toward you, or a car backing out.
+
+**The solution.** A phone or webcam watches the way ahead. AI detects and tracks objects, works out direction, distance and speed, and speaks only what matters: "Persona davanti, 3 metri", "Bici in arrivo da sinistra". When the image is bad it says "Guidance unreliable" instead of guessing.
+
+**One engine, two markets.** Street mode helps visually impaired people. Industrial mode warns hangar and factory workers about vehicles and people. Only a profile (object list, distances, voice lines) changes.
+
+### How Occhio covers the FieldVision brief
+
+| Requirement from Mare Group | How Occhio does it |
+| --- | --- |
+| Detect moving objects and obstacles | YOLO11n on the Mac GPU (MPS) |
+| Handle temporary occlusions | ByteTrack keeps IDs; memory of lost tracks for 1.5 s |
+| Separate confirmed from uncertain detections | Confirmed = seen in 5+ frames with confidence above 0.6 |
+| Timely spatial feedback | Voice and beeps with direction, distance, approach speed |
+| Signal when guidance is unreliable | Reliability score from light, blur, confidence, blocked lens |
+| Continuity, low latency, efficiency | Live FPS and latency counter; nano models; depth every 3rd frame |
+
+### Why this can win
+
+- **Usefulness:** helps a real person; anyone understands it in 5 seconds.
+- **Relevance:** every requirement above is met and shown live.
+- **Design and UX:** a calm voice that speaks only about danger, plus a clear screen.
+- **Creativity:** "describe scene" with a vision LLM, two modes, a blindfolded test.
+- **The sponsor:** Industrial mode speaks to Mare Group's own aerospace business.
+
+## 2. Hackathon facts
+
+The project is due **Sunday 15 November at 12:00**, built in person at Città della Scienza, Via Coroglio 57/104, Naples ([event page](https://go.codemotion.com/big-hack-hackathon-2026-en/)).
+
+| When | What |
+| --- | --- |
+| Sat 9:00–10:00 | Check-in |
+| Sat 10:00–11:00 | Partner talks and rules (listen to Mare Group carefully) |
+| Sat 11:00–20:30 | Hacking |
+| Sun 8:30 | Doors open, hacking resumes |
+| **Sun 12:00** | **Project submission deadline** |
+| Sun 14:00–15:30 | Jury voting |
+| Sun 16:00–18:00 | Closing event and winners |
+
+**Rules to remember**
+
+- Teams of 2 to 5. At least **2 mentor checkpoints** are required.
+- Be present both days; at least one member at the closing event to collect the prize.
+- Official language is Italian. Prize: €2,500 Amazon gift card for the winner of each challenge.
+- Submit a working prototype, demo or simulation. The 2025 edition also asked for a **video pitch of at most 4 minutes** ([2025 rules](https://2025.thebighack.makerfairerome.eu/en/regulations/)); prepare one in case.
+
+**Judging criteria:** usefulness and value · relevance to the challenge · clarity and completeness · design and user experience · creativity and innovation.
+
+**Open question:** is code written before 11:00 Saturday allowed? Ask at the rules talk. Until then, tonight is for setup and practice only.
+
+## 3. Architecture
+
+Every frame goes through five stages: capture, detect, track, reason, speak. Only stage 4 (reason) is our own logic, and it is where we win.
+
+&#91;embedded content: Occhio pipeline · 5 stages per frame\]
+
+Detection and tracking are off-the-shelf; the Reason stage (confirmed vs uncertain, distance, approach, reliability, priority) is what the jury will judge.
+
+### Tech stack
+
+| Part | Tool | Why |
+| --- | --- | --- |
+| Language | Python 3.11 | Team strength, all AI libs |
+| Detection + tracking | Ultralytics YOLO11n + ByteTrack | Real-time on M5 GPU (`device="mps"`), tracking built in |
+| Depth (distance) | Depth Anything V2 Small (Hugging Face `transformers`) | Metres from one camera; run every 3rd frame |
+| Video I/O | OpenCV | Webcam, iPhone Continuity Camera, drawing overlays |
+| Voice | macOS `say` (Italian voice Alice) in a background thread | Zero setup, offline, no lag |
+| Beeps / stereo | `sounddevice` + `numpy` | Left/right ear, faster beeps when closer |
+| Scene description | Claude or GPT vision API | "What's in front of me?" button |
+| Voice commands (Tier 3) | `faster-whisper` small | "Occhio, cosa c'è intorno?" |
+| UI | OpenCV window first; Streamlit dashboard optional | OpenCV is lowest latency for the live demo |
+
+### Folder structure
+
+```
+occhio/
+├── CLAUDE.md              # context for Claude Code / Cursor (see section 4)
+├── README.md
+├── requirements.txt
+├── main.py                # entry: python main.py --mode street --source 0
+├── config/
+│   └── profiles.py        # street + industrial profiles
+├── occhio/
+│   ├── capture.py         # camera thread, latest-frame queue
+│   ├── detector.py        # YOLO + ByteTrack wrapper
+│   ├── depth.py           # Depth Anything, every Nth frame
+│   ├── tracks.py          # track memory, confirmed/uncertain, occlusion
+│   ├── spatial.py         # direction, distance, speed, time-to-collision
+│   ├── reliability.py     # light, blur, confidence, blocked lens -> score
+│   ├── priority.py        # danger ranking + anti-spam cooldowns
+│   ├── speech.py          # say + beeps + stereo pan
+│   ├── scene_llm.py       # describe-scene with a vision LLM
+│   ├── overlay.py         # boxes, corridor, FPS, event log
+│   └── metrics.py         # FPS, latency, warnings, false alarms
+└── tests/
+    └── test_logic.py      # tests for tracks, spatial, priority
+```
+
+### Profiles (one engine, two modes)
+
+```python
+PROFILES = {
+    "street": {
+        "classes": ["person", "bicycle", "car", "motorcycle", "bus", "truck", "dog"],
+        "warn_distance_m": 3.0,
+        "danger_distance_m": 1.5,
+        "lang": "it",
+        "lines": {
+            "ahead": "{obj} davanti, {dist} metri",
+            "approach": "{obj} in arrivo da {side}",
+            "clear": "Strada libera",
+            "unreliable": "Visibilità scarsa, guida non affidabile",
+        },
+    },
+    "industrial": {
+        "classes": ["person", "truck", "car"],
+        "warn_distance_m": 5.0,
+        "danger_distance_m": 2.5,
+        "lang": "it",
+        "lines": {
+            "ahead": "Attenzione: {obj} a {dist} metri",
+            "approach": "Veicolo a {side}. Stop.",
+            "clear": "Area libera",
+            "unreliable": "Telecamera non affidabile, fermati e verifica",
+        },
+    },
+}
+```
+
+## 4. Setup tonight (about 1 hour)
+
+Tonight we only install and test, so Saturday 11:00 starts with coding, not downloads.
+
+### Mac M5 install
+
+```bash
+# 1. Python env
+brew install python@3.11 ffmpeg portaudio
+python3.11 -m venv .venv && source .venv/bin/activate
+
+# 2. Libraries
+pip install ultralytics opencv-python numpy sounddevice transformers torch torchvision pillow anthropic python-dotenv faster-whisper streamlit pytest
+
+# 3. Pre-download models (venue Wi-Fi will be slow)
+yolo predict model=yolo11n.pt source=https://ultralytics.com/images/bus.jpg
+python -c "from transformers import pipeline; pipeline('depth-estimation', model='depth-anything/Depth-Anything-V2-Small-hf')"
+
+# 4. Live test: boxes should follow you smoothly
+yolo track model=yolo11n.pt source=0 show=True device=mps
+
+# 5. Voice test (Italian)
+say -v Alice "Persona davanti, tre metri"
+```
+
+- [ ] Webcam test runs smoothly (step 4)
+- [ ] Italian voice works (step 5); if Alice is missing: System Settings → Accessibility → Spoken Content → add voice
+- [ ] API key for the vision LLM saved in a `.env` file (`ANTHROPIC_API_KEY=...`), never in git
+- [ ] Empty GitHub repo `occhio` created and shared with the team
+- [ ] iPhone Continuity Camera tested as a second camera
+
+### Things to bring
+
+- [ ] MacBook and charger, **extension lead**, USB-C hub
+- [ ] iPhone + cable, earphones (stereo, for the left/right audio demo)
+- [ ] Phone hotspot as backup Wi-Fi
+- [ ] A scarf or sleep mask for the blindfold test, a chair to use as an obstacle
+- [ ] ID, water, snacks
+
+### AI coding setup (Claude Code or Cursor)
+
+Put this file in the repo root as `CLAUDE.md` (Cursor: also copy it to `.cursor/rules/occhio.mdc`). Every AI session then knows the project.
+
+```markdown
+# Occhio – project context
+
+Real-time assistive vision for blind users (Street mode) and worker safety (Industrial mode).
+Hackathon: The Big Hack 2026, Mare Group FieldVision challenge. Deadline Sun 15 Nov 12:00.
+
+## Hardware
+MacBook Air M5, fanless. Use device="mps". Keep models small (yolo11n, Depth-Anything-V2-Small).
+
+## Pipeline
+capture -> detect (YOLO11n) -> track (ByteTrack) -> reason (tracks, spatial, reliability, priority) -> speak + overlay
+
+## Rules for code
+- Python 3.11, type hints, small modules as in the folder structure. No global state except config.
+- Real-time first: never block the main loop. Speech, LLM calls and depth run in background threads.
+- Target >= 20 FPS end to end. Print FPS and latency every second.
+- All user-facing strings come from config/profiles.py (Italian by default).
+- Every logic module (tracks, spatial, priority, reliability) has pytest tests with fake detections.
+- Keep `python main.py --mode street --source 0` working after every change.
+- Do not add new dependencies without asking.
+```
+
+**How to work with the AI**
+
+- One feature per prompt, one module per prompt. Paste the phase prompt from section 5.
+- After each prompt: run `python main.py`, then `pytest`, then commit (`git commit -am "F07 approach detection"`).
+- If the AI breaks something, `git checkout .` and ask again with the error message.
+- Each teammate works in their own files and their own branch to avoid conflicts; merge every 2 hours.
+
+## 5. Build phases with AI prompts
+
+There are six phases. Each has features (F-numbers), a time box, a "done when" test, and a prompt to paste into Claude Code or Cursor. Never start a phase until the previous "done when" passes.
+
+| Phase | Time | Result |
+| --- | --- | --- |
+| 0. Skeleton | Sat 11:00–11:30 | Repo runs, camera on screen |
+| 1. See | Sat 11:30–14:00 | Detect, track, confirmed/uncertain, overlay |
+| 2. Understand and speak | Sat 14:00–17:00 | Direction, distance, approach, voice, unreliable warning |
+| 3. Wow features | Sat 17:00–20:30 | Stereo beeps, describe scene, two modes, corridor |
+| 4. Pro features | Sun 8:30–10:30 | Voice commands, text reading, stairs, dashboard |
+| 5. Pitch and submit | Sun 10:30–12:00 | Video, slides, repo, submission |
+
+### Phase 0 – Skeleton (Sat 11:00–11:30)
+
+- [ ] Repo with the folder structure from section 3, `CLAUDE.md`, `requirements.txt`
+- [ ] `main.py` opens the camera in a background thread and shows frames with FPS
+
+**Done when:** `python main.py --mode street --source 0` shows the webcam at 25+ FPS.
+
+```
+Read CLAUDE.md. Create the project skeleton exactly as the folder structure says, with empty but importable modules and docstrings explaining each one's job. Implement capture.py: a CameraStream class that reads frames in a background thread and always returns only the latest frame (drop old frames to keep latency low). Support --source 0 (webcam), 1 (iPhone Continuity Camera) or a video file path. Implement main.py with argparse (--mode street|industrial, --source, --no-voice) that shows frames in an OpenCV window with FPS in the top-left corner. Press q to quit. Add config/profiles.py with the PROFILES dict from the plan.
+```
+
+### Phase 1 – See (Sat 11:30–14:00) · owner: Vision + Logic
+
+- [ ] F1 Real-time detection with YOLO11n on `mps`, filtered by the profile's classes
+- [ ] F2 Tracking with stable IDs (ByteTrack, `persist=True`)
+- [ ] F3 Occlusion memory: keep a lost track for 1.5 s, predict its position, label it "hidden"
+- [ ] F4 Confirmed vs uncertain: confirmed after 5+ frames with mean confidence above 0.6
+- [ ] F13 Overlay: green confirmed, yellow uncertain, red danger, grey dashed for hidden
+- [ ] F14 FPS and per-stage latency (ms) on screen
+
+**Done when:** a teammate walks behind a chair and comes out with the same ID, and false flickers stay yellow.
+
+```
+Read CLAUDE.md. Implement detector.py: a Detector class wrapping ultralytics YOLO('yolo11n.pt') with model.track(frame, persist=True, tracker='bytetrack.yaml', device='mps', verbose=False), returning a list of Detection dataclasses (track_id, cls_name, conf, xyxy) filtered by the active profile's classes.
+
+Then implement tracks.py: a TrackManager that keeps a Track per id with history of boxes (last 30), frames_seen, mean_conf, last_seen time and status in {uncertain, confirmed, hidden}. Rules: confirmed when frames_seen >= 5 and mean_conf >= 0.6; when a confirmed track disappears, mark it hidden and predict its box with constant velocity for up to 1.5 s, then delete it; if it comes back with the same id, it is confirmed again immediately. Thresholds come from config.
+
+Then implement overlay.py to draw boxes: confirmed green, uncertain yellow, hidden grey dashed, with label '#id cls conf'. Show FPS and latency per stage (capture, detect, logic) in ms. Add pytest tests for TrackManager with fake detections, including an occlusion of 20 frames.
+```
+
+### Phase 2 – Understand and speak (Sat 14:00–17:00) · owner: Logic + Audio
+
+- [ ] F5 Direction: left / ahead / right from the box centre (plus clock position, "a ore 2")
+- [ ] F6 Distance in metres: Depth Anything V2 Small every 3rd frame, median depth inside the box; box-height fallback
+- [ ] F7 Approach detection from distance change over the last 10 frames
+- [ ] F8 Speed estimate and "fast" flag
+- [ ] F9 Voice in Italian and English via `say`, in a background queue that never blocks
+- [ ] F10 Priority: speak only the most dangerous confirmed object (closeness × approach speed × confidence)
+- [ ] F11 Anti-spam: the same track and message at most once every 3 s; urgent messages interrupt
+- [ ] F12 Reliability score (0–1) from brightness, blur (Laplacian variance), mean confidence and blocked lens; below 0.4 say the "unreliable" line and stop other warnings
+- [ ] **Mentor checkpoint 1** around 16:00: show the live demo, ask what matters most to Mare Group
+
+**Done when:** walking toward the camera triggers "Persona davanti, 2 metri", and covering the lens triggers the unreliable warning within 1 s.
+
+```
+Read CLAUDE.md. Implement depth.py: a DepthEstimator using transformers pipeline('depth-estimation', model='depth-anything/Depth-Anything-V2-Small-hf', device='mps') running in a background thread on every 3rd frame; it exposes the latest depth map. Convert relative depth to approximate metres with a calibration constant we can set by standing at a known 2 m distance (add a --calibrate flag). Fallback when no depth: distance from box height using a known average height per class.
+
+Implement spatial.py: for each confirmed track compute side (sinistra/davanti/destra by thirds of the frame width), clock position (10 to 2 o'clock), distance_m (median depth in the box), approach_speed_mps from a linear fit of distance over the last 10 frames, and time_to_collision_s when approaching.
+
+Implement priority.py: danger_score = closeness * max(approach_speed, 0.1) * mean_conf, only for confirmed tracks within warn_distance_m. Return at most one message per cycle. Cooldown 3 s per (track, message type); 'danger' messages (distance < danger_distance_m or ttc < 2 s) skip the cooldown.
+
+Implement reliability.py: score from brightness (mean gray), blur (variance of Laplacian), mean detection confidence, and a blocked-lens check (very low variance). Smooth with an exponential moving average. Below 0.4 => unreliable.
+
+Implement speech.py: a Speaker with a queue and a worker thread calling subprocess 'say -v Alice' (Italian) or 'say -v Samantha' (English); urgent messages clear the queue and kill the current 'say' process. All texts come from the profile lines. Add pytest tests for spatial, priority and reliability.
+```
+
+### Phase 3 – Wow features (Sat 17:00–20:30) · owner: Audio + UI
+
+- [ ] F15 Stereo audio: beep panned to the left or right ear by the object's side
+- [ ] F16 Parking-sensor beeps: faster when closer (1 Hz at warn distance, 6 Hz at danger distance)
+- [ ] F17 "Describe scene" (key `d` or a button): vision LLM returns one short Italian sentence, spoken aloud
+- [ ] F18 Mode switch Street ↔ Industrial (key `m`), spoken confirmation
+- [ ] F19 "Strada libera" when nothing is dangerous for 5 s
+- [ ] F20 Time to collision: "Collisione tra 2 secondi"
+- [ ] F21 Walking corridor: a trapezoid drawn on the lower-centre of the frame; only objects inside it are dangerous
+- [ ] F22 Event log panel: the last 8 spoken messages with timestamps
+- [ ] Merge all branches, full test run, commit tag `v1-saturday`
+
+**Done when:** the full demo (section 7) runs twice in a row without a crash.
+
+```
+Read CLAUDE.md. Add to speech.py stereo beeps with sounddevice: a short 880 Hz tone panned left/right by the target's side, repeated at a rate interpolated from 1 Hz (warn distance) to 6 Hz (danger distance); runs in its own thread and stops when no target.
+
+Add scene_llm.py: on key 'd', JPEG-encode the current frame (max 768 px), send it to the Anthropic API (model from env OCCHIO_LLM_MODEL) with the prompt 'You help a blind person walking. In one short Italian sentence (max 20 words) describe obstacles, people, vehicles, crossings, traffic lights and signs in front of them. Most important first.' Run in a background thread, speak the answer, show it on screen. Handle errors by speaking 'Descrizione non disponibile'.
+
+Add key 'm' to toggle the profile at runtime and speak 'Modalità strada' / 'Modalità industriale'. Add the walking corridor (trapezoid, configurable in the profile) to spatial.py and overlay.py: only tracks whose bottom-centre is inside it can be 'danger'. Add 'clear' message after 5 s without warnings, time-to-collision messages when ttc < 3 s, and an event log panel on the right side of the window with the last 8 messages.
+```
+
+### Phase 4 – Pro features (Sun 8:30–10:30, only if Phases 1–3 are solid) · all
+
+Pick in this order and stop at 10:30 whatever is unfinished.
+
+- [ ] F27 Traffic light colour: crop YOLO's "traffic light" box, red vs green by HSV pixel count
+- [ ] F28 Step / drop-off warning: sudden depth jump in the bottom strip of the frame → "Gradino in basso"
+- [ ] F26 Text reading: key `t` → vision LLM reads signs and bus numbers ("Autobus 140")
+- [ ] F23 Voice command "Occhio, cosa c'è intorno?" with faster-whisper (push-to-talk key `v`)
+- [ ] F30 Industrial restricted zone: draw a polygon with the mouse; a person inside → "Operatore in zona pericolosa"
+- [ ] F29 Power saving: skip detection frames when nothing moves for 3 s
+- [ ] F31 Metrics: FPS, latency, warnings per minute, warning lead time, saved to `metrics.csv` for the slides
+- [ ] F24 Deaf-blind vibration (stretch): send the danger level to a phone web page that calls `navigator.vibrate`
+- [ ] **Mentor checkpoint 2** around 9:30
+
+**Done when:** the features you chose work in the demo flow and nothing from Phase 1–3 broke.
+
+```
+Read CLAUDE.md. Add a traffic light colour check: for tracks of class 'traffic light', crop the box, convert to HSV, count red vs green pixels, and announce 'Semaforo rosso' / 'Semaforo verde' when it changes. Add a step warning: every depth frame, compare the median depth of the bottom 15% strip with the strip above; a jump bigger than a configurable threshold => 'Gradino in basso'. Add metrics.py writing one row per second to metrics.csv: fps, latency_ms per stage, warnings count, and for each danger warning the time between the warning and the object reaching danger_distance (lead time). Keep everything non-blocking and add tests.
+```
+
+### Phase 5 – Pitch and submit (Sun 10:30–12:00) · owner: UI + pitch, all help
+
+- [ ] Feature freeze at 10:30: only bug fixes after this
+- [ ] Record the backup demo video (full demo flow, screen + voice)
+- [ ] Pitch video under 4 minutes (section 7)
+- [ ] Slides (section 7) with the real numbers from `metrics.csv`
+- [ ] README: what it is, how to run, architecture, team, demo video link
+- [ ] Repo public (or shared), last commit pushed
+- [ ] **Submit by 11:45**, not 11:59
+
+```
+Read CLAUDE.md and the code. Write README.md for judges: one-line pitch, the problem, a demo GIF placeholder, how each Mare Group requirement is met (table), architecture diagram in mermaid, install and run commands for macOS, key controls (d, t, m, v, q), measured performance from metrics.csv, future work (custom training for aerospace objects, smart glasses, offline phone app), and the team. Keep it under 150 lines.
+```
+
+## 6. Team roles
+
+Each person owns their modules and their own git branch; merge every 2 hours (13:00, 15:00, 17:00, 19:00). With fewer than 4 people, merge roles A+B and C+D.
+
+| Role | Owns (files) | Features | Also does |
+| --- | --- | --- | --- |
+| A – Vision | `detector.py`, `depth.py`, `capture.py` | F1, F2, F6, F27, F28 | Calibrates distance, tests lighting at the venue |
+| B – Logic | `tracks.py`, `spatial.py`, `priority.py`, `reliability.py` | F3–F5, F7, F8, F10–F12, F20, F21, F30 | Writes the pytest tests, keeps `main` branch green |
+| C – Audio + AI | `speech.py`, `scene_llm.py` | F9, F15–F17, F19, F23, F26 | Italian voice lines, LLM prompt tuning |
+| D – UI + Pitch | `overlay.py`, `metrics.py`, README, slides | F13, F14, F18, F22, F29, F31, Phase 5 | Talks to mentors, films the blindfold test, pitch in Italian |
+
+**Saturday 20:30 rule:** Phases 1 and 2 must work perfectly before anyone leaves. Phase 3 can continue at home only if it is in a separate branch.
+
+## 7. Demo, pitch and slides
+
+The pitch is one emotional story (Maria walks to the bus alone), one live demo that proves every requirement, and one surprise (Industrial mode).
+
+### Live demo script (about 2 minutes)
+
+1. Street mode on, earphones on the presenter. A teammate walks toward the camera → "Persona davanti, 3 metri", then "2 metri".
+2. The teammate walks fast across the frame → stereo beep moves from left ear to right ear.
+3. The teammate hides behind a chair for 2 seconds → the box goes grey "hidden" and keeps its ID; comes out → same ID.
+4. A quick false detection stays yellow and silent → "only confirmed objects speak".
+5. Cover the lens → "Visibilità scarsa, guida non affidabile".
+6. Press `d` → "Una persona seduta davanti, una sedia a destra, porta aperta in fondo".
+7. Press `m` → "Modalità industriale"; a teammate walks in → "Attenzione: persona a 4 metri".
+8. Point at the FPS and latency counter: "30 frames per second on a fanless laptop".
+
+### Pitch video (under 4 minutes)
+
+| Time | Content |
+| --- | --- |
+| 0:00–0:30 | The problem: a blind person and a 1-metre cane in a Naples street |
+| 0:30–0:50 | **The blindfold test clip** (15 s): a teammate walks guided only by Occhio |
+| 0:50–2:20 | Demo script steps 1–6 (screen recording + voice) |
+| 2:20–2:50 | How it works: the pipeline, confirmed vs uncertain, reliability score |
+| 2:50–3:20 | The numbers (below) |
+| 3:20–3:50 | One engine, two markets: Industrial mode for Mare Group's aerospace and factory sites |
+
+### Slides (8 maximum)
+
+1. **Occhio** – "Gli occhi che parlano" (eyes that talk) + team
+2. The problem: what the cane can't see
+3. The solution: Maria's walk, with the voice lines
+4. Live demo (switch to the app)
+5. How it works: 5-stage pipeline, our reasoning layer highlighted
+6. Requirement checklist: the table from section 1, all ticked
+7. Numbers measured at the venue
+8. One engine, two markets + future work (custom aerospace training, smart glasses, offline phone app)
+
+### Numbers to measure on Saturday evening
+
+- [ ] FPS end to end on the M5 Air (target 20+)
+- [ ] Latency from frame to voice start, in ms (target under 300)
+- [ ] Warning lead time: seconds between the first warning and the person reaching 1.5 m (target 2+)
+- [ ] False alarms per minute with and without the confirmed rule (shows the rule's value)
+- [ ] Occlusion recovery: % of IDs kept after a 1–2 s hide over 10 tries
+
+## 8. Risks and backup plans
+
+The biggest risk is a live demo failing in front of the jury, so every risky part has a fallback ready.
+
+| Risk | Backup plan |
+| --- | --- |
+| Mac gets hot and FPS drops (fanless Air) | Plug in; run depth every 5th frame; lower input to 640 px; close other apps |
+| Depth model too slow or wrong | Box-height distance fallback (already built in Phase 2) |
+| Venue Wi-Fi down (LLM features fail) | Phone hotspot; "describe scene" speaks a fallback line; everything else runs offline |
+| Venue lighting too dark or too bright | Test at 11:00 Saturday; tune reliability thresholds; demo near a window or lamp |
+| Live demo crashes | Backup demo video ready on the desktop; switch in 5 seconds |
+| AI tool writes broken code | Commit after every working feature; `git checkout .` and re-prompt with the error |
+| Merge conflicts | One owner per file; merge every 2 hours |
+| Brief changes at the 10:00 talk | Re-read this plan against the new brief at 10:45; second choice is Napoli Agentic City |
+| Pre-written code not allowed | Tonight is setup only; all project code starts at 11:00 |
+
+### Final checklist (Sunday 11:30)
+
+- [ ] App runs from a fresh terminal with one command
+- [ ] Demo rehearsed twice; presenter knows the Italian lines
+- [ ] Backup video on the desktop, slides open, earphones charged
+- [ ] README and repo link work in a private browser window
+- [ ] Pitch video under 4 minutes, uploaded, link tested
+- [ ] **Project submitted** (target 11:45)
+- [ ] At least one team member confirmed for the 16:00 closing event

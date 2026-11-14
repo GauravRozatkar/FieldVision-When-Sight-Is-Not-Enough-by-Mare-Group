@@ -1,0 +1,10 @@
+# ByteTrack settings for Occhio (copied from the ultralytics defaults).
+# Changes: track_buffer 30 -> 60 frames, so a person hidden behind a chair keeps
+# their ID for the 1.5 s occlusion window even at 40 FPS; new_track_thresh 0.25 -> 0.2.
+tracker_type: bytetrack
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.2  # a bit lower so small objects (phone, bottle) get a track
+track_buffer: 60
+match_thresh: 0.8
+fuse_score: True

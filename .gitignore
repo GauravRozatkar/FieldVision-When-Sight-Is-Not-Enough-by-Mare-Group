@@ -1,0 +1,15 @@
+.venv/
+.env
+__pycache__/
+.pytest_cache/
+.DS_Store
+runs/
+metrics.csv
+demo.mp4
+metrics.csv
+config/zone.json
+config/calibration.json
+busy.mp4
+reports/
+research_notes/
+*.mp4
