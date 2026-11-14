@@ -322,6 +322,15 @@ class App:
             print(f"[occhio] {exc}", file=sys.stderr)
             self.close()
             return 1
+        except OSError as exc:  # e.g. the phone port is still used by another Occhio
+            if getattr(exc, "errno", None) == 48 or "Address already in use" in str(exc):
+                port = getattr(args, "phone_port", 8443)
+                print(f"[occhio] port {port} is already in use: another Occhio is probably still running. "
+                      f"Stop it (q or Ctrl-C in its window), or use --phone-port {port + 1}.", file=sys.stderr)
+            else:
+                print(f"[occhio] {exc!r}", file=sys.stderr)
+            self.close()
+            return 1
         print(f"[occhio] mode={self.mode} lang={self.lang} source={args.source!r} device={self.detector.device} "
               f"model=yolo11{self.detector_size} "
               f"depth={'on' if self.depth else 'off'} voice={'off' if args.no_voice else 'on'} "
