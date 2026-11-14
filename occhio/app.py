@@ -121,7 +121,9 @@ class App:
         self.calibration = Calibration() if args.calibrate is not None else Calibration.load()
         self.spatial = SpatialReasoner(self.profile, calibration=self.calibration)
         self.reliability = ReliabilityMonitor(RELIABILITY_PHONE if args.source == "phone" else None)
-        self.planner = PriorityPlanner(self.profile, self.lang)
+        # A phone in the hand blurs often: repeat "poor visibility" less often (8 s instead of 5).
+        self.planner = PriorityPlanner(self.profile, self.lang,
+                                       {"unreliable_repeat_s": 8.0} if args.source == "phone" else None)
         self.traffic = TrafficLightMonitor()
         self.step = StepDetector()
         self.free_space = FreeSpace() if (args.source == "phone" or getattr(args, "walls", False)) else None
@@ -384,7 +386,10 @@ class App:
             t_detect = time.perf_counter()
             self.tracks = self.tracks_mgr.update(detections, now, image)
             for event in self.tracks_mgr.events:
-                print(f"[occhio] {event}", flush=True)
+                # "hidden" / "back (path)" flicker many times a second at the edge of the picture:
+                # only in details mode (key i). Confirmed / lost / back-after-Ns are always shown.
+                if self.show_details or not (event.endswith(" hidden") or event.endswith("back (path)")):
+                    print(f"[occhio] {event}", flush=True)
         else:
             t_detect = time.perf_counter()
         stages.add("detect", (t_detect - t_start) * 1000.0)
