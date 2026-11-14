@@ -28,6 +28,7 @@ from config.settings import CAMERA, CALIBRATION_FILE, RELIABILITY_PHONE, SPATIAL
 from occhio.capture import CameraStream, VideoRecorder
 from occhio.depth import DepthEstimator, load_depth_anything
 from occhio.detector import Detector
+from occhio.free_space import FreeSpace
 from occhio.ground import StepDetector
 from occhio.hud import (AMBER, BLUE, CAM_H, CAM_W, GREEN, RED, YELLOW, HudState, Label, Nearby, compose,
                         draw_light, draw_zone, fit_geometry, to_camera_norm, track_label)
@@ -41,7 +42,7 @@ from occhio.scene_llm import SceneDescriber, anthropic_call
 from occhio.scene_local import describe_detections
 from occhio.vlm_local import LOCAL_PROMPTS, LocalVLM, choose_backend, is_cached
 from occhio.sound import SoundMonitor
-from occhio.spatial import Calibration, SpatialReasoner, corridor_polygon
+from occhio.spatial import Calibration, SpatialInfo, SpatialReasoner, corridor_polygon
 from occhio.speech import Beeper, Speaker
 from occhio.tracks import TrackManager, TrackStatus
 from occhio.traffic_light import TrafficLightMonitor
@@ -115,6 +116,7 @@ class App:
         self.planner = PriorityPlanner(self.profile, self.lang)
         self.traffic = TrafficLightMonitor()
         self.step = StepDetector()
+        self.free_space = FreeSpace() if (args.source == "phone" or getattr(args, "walls", False)) else None
         self.zone = DangerZone()
         self.gate = MotionGate()
         self.metrics = MetricsLogger(args.metrics or None)
@@ -129,7 +131,9 @@ class App:
         self.phone: PhoneCamera | None = None
         voice_wanted = not args.no_voice
         mac_voice = voice_wanted and (not self.phone_mode or getattr(args, "mac_voice", False))
-        self.speaker = Speaker(self.lang, enabled=mac_voice, on_spoken=self._on_spoken).start()
+        self.mac_voice = mac_voice
+        # Phone mode: the Mac also speaks until the phone reports that its own voice works.
+        self.speaker = Speaker(self.lang, enabled=voice_wanted, on_spoken=self._on_spoken).start()
         self.beeper = Beeper(enabled=mac_voice).start()
         self.beeps_on = voice_wanted and not getattr(args, "no_beeps", False)  # 'b' toggles
         self.beep_policy = BeepPolicy(self.profile)
@@ -295,6 +299,7 @@ class App:
             if self.phone_mode:
                 self.phone = PhoneCamera(port=getattr(args, "phone_port", 8443), lang=self.lang, strings={
                     "ready": self.ui["phone_ready"], "tap": self.ui["phone_tap"], "start": self.ui["phone_start"],
+                    "test_voice": self.ui["test_voice"], "voice_on": self.ui["voice_on"],
                 }).start()
                 stream = self.phone
                 print(f"[occhio] PHONE: open {self.phone.url} in Safari on the iPhone (same Wi-Fi or its hotspot), "
@@ -378,7 +383,24 @@ class App:
         if self.depth:
             self.depth.submit(image, now)
         depth_frame = self.depth.latest if self.depth else None
+        if self.phone is not None:
+            self.speaker.enabled = not self.args.no_voice and (self.mac_voice or not self.phone.phone_voice_ok)
+            self.spatial.pitch_deg = self.phone.pitch_deg
+            self.spatial.user_speed_mps = self.phone.walk_speed
+            self.planner.extra_warn_m = min(1.5, self.phone.walk_speed * 1.0)
         self.infos = self.spatial.update(self.tracks, depth_frame, self._frame_shape, now)
+        if self.free_space is not None and depth_frame is not None:
+            wall = self.free_space.update(depth_frame, self._frame_shape, self.spatial.floor_distance_at_row,
+                                          fallback_scale=self.spatial.calibration.depth_k)
+            nearer = any(i.confirmed and i.in_corridor and i.distance_m is not None and i.distance_m <= (wall or 0) + 0.5
+                         for i in self.infos)
+            if wall is not None and not nearer:  # something big in the path the detector has no name for
+                approach = 0.8 * self.spatial.user_speed_mps
+                self.infos.append(SpatialInfo(
+                    track_id=-1, cls_name="obstacle", confirmed=True, mean_conf=0.8, side="ahead", clock=12,
+                    distance_m=wall, distance_source="depth", approach_mps=approach, lateral_mps=0.0,
+                    speed_mps=approach, fast=False, ttc_s=wall / approach if approach >= 0.3 else None,
+                    in_corridor=True, x_norm=0.5))
         rel = self.reliability.update(image, self.tracks)
         self.rel = rel
         message = self.planner.plan(self.infos, rel, now)
@@ -479,6 +501,11 @@ class App:
             if self.show_details:
                 text += f"   #{t.track_id} {t.conf:.2f}"
             labels.append(track_label(x1, y1, text, colour, CAM_H))
+        wall = next((i for i in self.infos if i.track_id == -1), None)
+        if wall is not None and wall.distance_m is not None:  # unnamed obstacle (wall): label at the bottom
+            colour = RED if -1 in danger_ids else AMBER
+            labels.append(track_label(ox + vw // 2 - 70, oy + vh - 70,
+                                      f"{self._object_name('obstacle')}  {wall.distance_m:.1f} m", colour, CAM_H))
         if self.traffic.box is not None:
             lb = self.traffic.box
             lx, ly, lcol = draw_light(view, (lb[0] * scale + ox, lb[1] * scale + oy, lb[2] * scale + ox,
@@ -514,6 +541,8 @@ class App:
             chips.append((self.ui["beeps_off"], GREY))
         if self.gate.eco:
             chips.append((self.ui["eco"], GREY))
+        if self.phone is not None and self.phone.walk_speed > 0.2:
+            chips.append((f'{self.ui["walking"]} {self.phone.walk_speed:.1f} m/s', GREEN))
         if self.describer.busy:
             chips.append((self.ui["describing"], BLUE))
         if self.voice.state in ("listening", "thinking"):

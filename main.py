@@ -55,6 +55,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--list-cameras", action="store_true", help="show the cameras with their numbers and exit")
     parser.add_argument("--phone-port", type=int, default=8443, help="port of the phone page (--source phone)")
     parser.add_argument("--mac-voice", action="store_true", help="with --source phone, also speak on the Mac")
+    parser.add_argument("--walls", action="store_true",
+                        help="warn about walls / big unnamed obstacles from depth (always on with --source phone)")
     parser.add_argument("--rotate", type=int, choices=[0, 90, 180, 270], default=0,
                         help="rotate the camera image, e.g. 90 for an iPhone worn upright on the chest")
     parser.add_argument("--no-voice", action="store_true", help="disable speech and beeps")

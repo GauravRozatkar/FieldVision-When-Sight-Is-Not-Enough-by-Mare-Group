@@ -70,3 +70,16 @@ def test_bag_warning_wording() -> None:
 def test_industrial_approach_names_the_object() -> None:
     assert render(INDUSTRIAL, "en", "approach", "person", side="left") == "Person coming from the left. Stop."
     assert render(INDUSTRIAL, "it", "approach", "truck", side="right") == "Camion in arrivo da destra. Stop."
+
+
+
+def test_one_wrong_label_does_not_rename_a_track() -> None:
+    mgr = TrackManager()
+    box = (600, 300, 640, 380)
+    for i in range(6):
+        mgr.update([Detection(1, "cell phone", 0.7, box)], i / 30)
+    mgr.update([Detection(1, "person", 0.55, box)], 6 / 30)  # one confused frame
+    assert mgr.tracks[1].cls_name == "cell phone"
+    for i in range(7, 30):  # it really is a person after all: the vote follows
+        mgr.update([Detection(1, "person", 0.8, box)], i / 30)
+    assert mgr.tracks[1].cls_name == "person"

@@ -120,3 +120,16 @@ def test_phone_reliability_tolerates_hand_shake() -> None:
     while phone.update(covered).reliable:
         frames += 1
     assert frames <= 8  # a covered lens is still caught in about half a second at 15 FPS
+
+
+
+def test_numpy_values_from_the_pipeline_do_not_break_the_reply() -> None:
+    phone = PhoneCamera(port=8792, use_https=False).start()
+    try:
+        phone.say("Obstacle ahead, 1 metre", urgent=np.bool_(True))  # what the pipeline can produce
+        phone.set_beep((np.float64(2.5), np.float64(-0.3), np.float64(440.0)))
+        reply = post("http://127.0.0.1:8792/frame", jpeg())
+        assert reply["say"] == [{"text": "Obstacle ahead, 1 metre", "urgent": True}]
+        assert reply["beep"] == {"rate": 2.5, "pan": -0.3, "freq": 440}
+    finally:
+        phone.stop()

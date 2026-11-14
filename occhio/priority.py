@@ -42,6 +42,9 @@ from occhio.spatial import SpatialInfo
 from occhio.speech import beep_rate
 
 
+GENERIC_OBSTACLE = "obstacle"  # something big in front that the detector has no name for (wall, door)
+
+
 @dataclass(frozen=True)
 class Message:
     text: str
@@ -82,6 +85,7 @@ class PriorityPlanner:
         self._last_any: float | None = None  # last time anything was said
         self._danger_dist: dict[int, float] = {}  # distance at the last danger message per track
         self._last_crowd: tuple[str, float] | None = None
+        self.extra_warn_m = 0.0  # walking: warn earlier (about one second of walking further out)
 
     def set_profile(self, profile: Profile) -> None:
         self.profile = profile
@@ -108,9 +112,9 @@ class PriorityPlanner:
         assert info.distance_m is not None
         if not info.in_corridor:
             return False
-        if info.distance_m < float(self.profile["danger_distance_m"]):
+        if float(info.distance_m) < float(self.profile["danger_distance_m"]):
             return True
-        return info.ttc_s is not None and info.ttc_s < self.danger_ttc_s
+        return info.ttc_s is not None and float(info.ttc_s) < self.danger_ttc_s
 
     def message_for(self, info: SpatialInfo) -> Message:
         danger = self.is_danger(info)
@@ -124,7 +128,7 @@ class PriorityPlanner:
             key = "ahead" if info.side == "ahead" else "side"
             kind = "danger" if danger else key
         text = render(self.profile, self.lang, key, info.cls_name, info.distance_m, info.side, info.ttc_s)
-        return Message(text, kind, info.track_id, urgent=danger, score=self.danger_score(info))
+        return Message(text, kind, info.track_id, urgent=bool(danger), score=float(self.danger_score(info)))
 
     # ----------------------------------------------------------------- choose
     def plan(self, infos: Iterable[SpatialInfo], reliability: ReliabilityState | None,
@@ -138,8 +142,8 @@ class PriorityPlanner:
             return None
         self._was_reliable = True
 
-        warn = float(self.profile["warn_distance_m"])
-        obstacles = set(self.profile["classes"])
+        warn = float(self.profile["warn_distance_m"]) + self.extra_warn_m
+        obstacles = set(self.profile["classes"]) | {GENERIC_OBSTACLE}
         candidates = [i for i in infos if i.confirmed and i.distance_m is not None and i.distance_m <= warn
                       and i.cls_name in obstacles]
         if any(i.in_corridor for i in candidates):
@@ -245,7 +249,7 @@ class BeepPolicy:
 def _beep_candidates(infos: Iterable[SpatialInfo], profile: Profile) -> list[SpatialInfo]:
     warn = float(profile["warn_distance_m"])
     approach_min = float(profile["approach_min_mps"])
-    obstacles = set(profile["classes"])
+    obstacles = set(profile["classes"]) | {GENERIC_OBSTACLE}
     return [i for i in infos if i.cls_name in obstacles and i.confirmed and i.distance_m is not None
             and i.distance_m <= warn and (i.in_corridor or i.approach_mps >= approach_min)]
 

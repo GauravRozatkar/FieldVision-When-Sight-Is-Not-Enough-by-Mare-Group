@@ -25,7 +25,8 @@ TRACKING: dict[str, Any] = {
     "class_confirm": {c: (0.4, 8) for c in ("backpack", "handbag", "suitcase", "umbrella", "bottle",
                                              "cell phone", "sports ball", "skateboard", "chair", "bench",
                                              "dining table", "potted plant", "fire hydrant", "parking meter",
-                                             "cat", "stop sign")} | {"chair": (0.3, 8)},  # class: (mean confidence, frames)
+                                             "cat", "stop sign", "laptop", "tv", "couch", "bed",
+                                             "refrigerator", "toilet", "sink", "oven")} | {"chair": (0.3, 8)},  # class: (mean confidence, frames)
     "hidden_ttl_s": 1.5,  # how long a lost confirmed track is kept as "hidden"
     "uncertain_ttl_s": 0.5,  # how long a lost uncertain track is kept before deletion
     "history_len": 30,  # boxes / confidences kept per track
@@ -75,7 +76,9 @@ SPATIAL: dict[str, Any] = {
                   "backpack": 0.50, "handbag": 0.30, "suitcase": 0.65, "umbrella": 0.90, "bottle": 0.25,
                   "cell phone": 0.15, "sports ball": 0.22, "skateboard": 0.12, "chair": 0.90,
                   "bench": 0.85, "dining table": 0.75, "potted plant": 0.70, "fire hydrant": 0.75,
-                  "parking meter": 1.40, "traffic light": 1.00, "stop sign": 0.75},
+                  "parking meter": 1.40, "traffic light": 1.00, "stop sign": 0.75,
+                  "laptop": 0.25, "tv": 0.60, "couch": 0.85, "bed": 0.60, "refrigerator": 1.80,
+                  "toilet": 0.75, "sink": 0.90, "oven": 0.90},
     # Small things lying on the floor: distance from where they touch the floor (needs the
     # camera height; the camera is assumed roughly level), because their box height says little.
     "ground_classes": ["cell phone", "bottle", "sports ball", "skateboard", "handbag", "backpack", "suitcase"],
@@ -226,4 +229,12 @@ LOCAL_VLM: dict[str, Any] = {
     "max_new_tokens": 40,
     "max_image_px": 768,
     "load_timeout_s": 90.0,  # a request waits this long for the model to finish loading
+}
+
+FREE_SPACE: dict[str, Any] = {
+    "flat_rel": 0.04,  # depth changing less than 4% over the window = an upright surface
+    "flat_rows": 0.08,  # window: 8% of the image height
+    "floor_rel": 0.08,  # the floor recedes by at least 8% over the window
+    "stable_frames": 3,  # depth maps in a row before a wall is reported
+    "max_m": 4.0,  # farther walls are not interesting
 }

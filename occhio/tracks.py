@@ -1,6 +1,8 @@
 """Track memory: confirmed / uncertain / hidden state per track id.
 
-ByteTrack gives IDs; TrackManager decides what we trust:
+ByteTrack gives IDs; TrackManager decides what we trust (and which class a track
+is: a confidence-weighted vote over its recent detections, so one wrong label
+cannot rename it):
 
 - uncertain: new or low-confidence; drawn yellow, never spoken.
 - confirmed: seen in >= confirm_frames frames with mean confidence >= confirm_mean_conf.
@@ -90,6 +92,7 @@ class Track:
     was_confirmed: bool = False
     predicted_box: BBox | None = None  # set while hidden
     appearance: np.ndarray | None = None  # running-average appearance signature
+    class_votes: deque[tuple[str, float]] = field(default_factory=lambda: deque(maxlen=15))
 
     def __post_init__(self) -> None:
         self.boxes = deque(maxlen=self.history_len)
@@ -248,7 +251,13 @@ class TrackManager:
 
     # ----------------------------------------------------------------- rules
     def _observe(self, track: Track, det: Detection, now: float, sig: np.ndarray | None) -> None:
-        track.cls_name = det.cls_name
+        # The detector sometimes flips the label for a frame ("person" for a phone held up):
+        # the track's class is a confidence-weighted vote over its last 15 detections.
+        track.class_votes.append((det.cls_name, det.conf))
+        totals: dict[str, float] = {}
+        for name, conf in track.class_votes:
+            totals[name] = totals.get(name, 0.0) + conf
+        track.cls_name = max(totals, key=totals.__getitem__)
         track.boxes.append((now, det.xyxy))
         track.confs.append(det.conf)
         track.frames_seen += 1

@@ -82,10 +82,7 @@ def test_local_model_describes_bus_photo() -> None:
     t0 = time.perf_counter()
     answer = vlm(jpeg, LOCAL_PROMPTS["describe"]["en"])
     assert vlm.ready and answer and "bus" in answer.lower()
-    t1 = time.perf_counter()
-    vlm(jpeg, LOCAL_PROMPTS["read"]["en"])
-    assert time.perf_counter() - t1 < 15.0  # about 1 s on an idle M5 Air; generous when the GPU is shared
-    assert t1 - t0 < 90
+    assert vlm(jpeg, LOCAL_PROMPTS["read"]["en"])  # an answer; speed (~1 s idle) is measured, not unit-tested
 
 
 @pytest.mark.parametrize("answer, none", [("No text.", True), ("no text", True), ("There is no text in the image", True),

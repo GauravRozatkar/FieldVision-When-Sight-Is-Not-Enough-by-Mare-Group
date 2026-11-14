@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from config.profiles import Profile
+from config.profiles import CATEGORY, Profile
 from config.settings import CALIBRATION_FILE, CAMERA, SPATIAL
 from occhio.depth import DepthFrame
 from occhio.tracks import Track, TrackStatus, box_centre
@@ -178,6 +178,8 @@ class SpatialReasoner:
         self._samples: dict[int, deque[tuple[float, float]]] = {}
         self._approach: dict[int, float] = {}  # smoothed approach speed per track
         self._sides: dict[int, str] = {}  # last side per track (hysteresis)
+        self.pitch_deg: float | None = None  # phone tilt below the horizon (from its accelerometer)
+        self.user_speed_mps = 0.0  # the user's walking speed (from the phone's step counter)
         self.side_margin = float(cfg.get("side_margin", 0.05))
 
     def set_profile(self, profile: Profile) -> None:
@@ -214,12 +216,20 @@ class SpatialReasoner:
         return f * real_h / height
 
     def ground_distance(self, box: BBox, frame_shape: tuple[int, int]) -> float | None:
-        """Distance of a point on the floor from how far below the horizon it is (level camera)."""
+        """Distance of a point on the floor from its angle below the horizon.
+
+        The camera is assumed level unless the phone reports its tilt (pitch_deg,
+        degrees below the horizon, from gravity): then the angle is tilt + pixel angle.
+        """
+        return self.floor_distance_at_row(box[3], frame_shape)
+
+    def floor_distance_at_row(self, row: float, frame_shape: tuple[int, int]) -> float | None:
         fh, fw = frame_shape
-        below = box[3] - fh / 2
-        if below <= 2:
+        f = self.focal_px(fw, fh)
+        angle = math.atan2(row - fh / 2, f) + math.radians(self.pitch_deg or 0.0)
+        if angle <= math.radians(1.0):
             return None  # at or above the horizon: not on the floor in front of us
-        return self.camera_height_m * self.focal_px(fw, fh) / below
+        return self.camera_height_m / math.tan(angle)
 
     def is_full_body_person(self, cls_name: str, box: BBox, frame_shape: tuple[int, int]) -> bool:
         fh, fw = frame_shape
@@ -297,6 +307,11 @@ class SpatialReasoner:
             vx, _ = track.centre_velocity(5)
             lateral = vx * dist / focal if dist is not None else 0.0
             speed = math.hypot(approach, lateral)
+            # Walking toward something that does not move (a wall, a bench, a bag): the vision estimate
+            # of its approach is noisy, the phone's step counter is not.
+            if (self.user_speed_mps > 0.2 and CATEGORY.get(track.cls_name, "obstacle") == "obstacle"
+                    and in_corridor(cx, track.box[3], self.profile["corridor"], frame_shape)):
+                approach = max(approach, 0.8 * self.user_speed_mps)
             approaching = approach >= float(self.profile["approach_min_mps"])
             ttc = dist / approach if (approaching and dist is not None) else None
             infos.append(SpatialInfo(

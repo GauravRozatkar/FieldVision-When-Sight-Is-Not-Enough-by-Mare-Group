@@ -29,6 +29,8 @@ OBJECTS: dict[str, dict[str, str]] = {
            "backpack": "zaino", "handbag": "borsa", "suitcase": "valigia", "umbrella": "ombrello",
            "bottle": "bottiglia", "cell phone": "telefono", "sports ball": "palla", "skateboard": "skateboard",
            "chair": "sedia", "bench": "panchina", "dining table": "tavolo", "potted plant": "vaso",
+           "laptop": "portatile", "tv": "schermo", "couch": "divano", "bed": "letto", "refrigerator": "frigorifero",
+           "toilet": "WC", "sink": "lavandino", "oven": "forno", "obstacle": "ostacolo",
            "fire hydrant": "idrante", "parking meter": "parchimetro", "stop sign": "segnale di stop",
            "traffic light": "semaforo"},
     "en": {"person": "person", "bicycle": "bike", "car": "car", "motorcycle": "motorbike",
@@ -36,6 +38,8 @@ OBJECTS: dict[str, dict[str, str]] = {
            "backpack": "backpack", "handbag": "bag", "suitcase": "suitcase", "umbrella": "umbrella",
            "bottle": "bottle", "cell phone": "phone", "sports ball": "ball", "skateboard": "skateboard",
            "chair": "chair", "bench": "bench", "dining table": "table", "potted plant": "plant pot",
+           "laptop": "laptop", "tv": "screen", "couch": "sofa", "bed": "bed", "refrigerator": "fridge",
+           "toilet": "toilet", "sink": "sink", "oven": "oven", "obstacle": "obstacle",
            "fire hydrant": "fire hydrant", "parking meter": "parking meter", "stop sign": "stop sign",
            "traffic light": "traffic light"},
 }
@@ -54,13 +58,17 @@ OBJECTS_PLURAL: dict[str, dict[str, str]] = {
            "backpack": "zaini", "handbag": "borse", "suitcase": "valigie", "umbrella": "ombrelli",
            "bottle": "bottiglie", "cell phone": "telefoni", "sports ball": "palle", "skateboard": "skateboard",
            "chair": "sedie", "bench": "panchine", "dining table": "tavoli", "potted plant": "vasi",
-           "fire hydrant": "idranti", "parking meter": "parchimetri"},
+           "fire hydrant": "idranti", "parking meter": "parchimetri", "laptop": "portatili", "tv": "schermi",
+           "couch": "divani", "bed": "letti", "refrigerator": "frigoriferi", "toilet": "WC", "sink": "lavandini",
+           "oven": "forni", "obstacle": "ostacoli"},
     "en": {"person": "people", "bicycle": "bikes", "car": "cars", "motorcycle": "motorbikes",
            "bus": "buses", "truck": "trucks", "dog": "dogs", "train": "trams", "cat": "cats",
            "backpack": "backpacks", "handbag": "bags", "suitcase": "suitcases", "umbrella": "umbrellas",
            "bottle": "bottles", "cell phone": "phones", "sports ball": "balls", "skateboard": "skateboards",
            "chair": "chairs", "bench": "benches", "dining table": "tables", "potted plant": "plant pots",
-           "fire hydrant": "fire hydrants", "parking meter": "parking meters"},
+           "fire hydrant": "fire hydrants", "parking meter": "parking meters", "laptop": "laptops", "tv": "screens",
+           "couch": "sofas", "bed": "beds", "refrigerator": "fridges", "toilet": "toilets", "sink": "sinks",
+           "oven": "ovens", "obstacle": "obstacles"},
 }
 NUMBER_WORDS: dict[str, dict[int, str]] = {  # counts in the instant scene summary (digits above)
     "it": {},
@@ -93,7 +101,8 @@ UI_TEXT: dict[str, dict[str, str]] = {  # on-screen labels
            "k_info": "Dettagli", "k_quit": "Esci", "fps": "FPS", "sound_level": "Suono",
            "k_beeps": "Bip", "beeps_off": "BIP OFF",
            "phone_ready": "Pronto", "phone_tap": "Tocca Avvia e punta la fotocamera davanti a te",
-           "phone_start": "Avvia"},
+           "phone_start": "Avvia", "test_voice": "Prova la voce", "voice_on": "Voce attiva",
+           "walking": "CAMMINI"},
     "en": {"street": "STREET", "industrial": "INDUSTRIAL", "reliable": "RELIABLE",
            "unreliable": "UNRELIABLE", "eco": "ECO", "mic": "MIC", "mic_off": "MIC OFF",
            "listening": "LISTENING...", "thinking": "THINKING...", "describing": "DESCRIBING...",
@@ -109,7 +118,8 @@ UI_TEXT: dict[str, dict[str, str]] = {  # on-screen labels
            "k_info": "Details", "k_quit": "Quit", "fps": "FPS", "sound_level": "Sound",
            "k_beeps": "Beeps", "beeps_off": "BEEPS OFF",
            "phone_ready": "Ready", "phone_tap": "Tap Start and point the camera ahead of you",
-           "phone_start": "Start"},
+           "phone_start": "Start", "test_voice": "Test voice", "voice_on": "Voice on",
+           "walking": "WALKING"},
 }
 
 PROFILES: dict[str, Profile] = {
@@ -118,7 +128,9 @@ PROFILES: dict[str, Profile] = {
                     # things on the pavement
                     "backpack", "handbag", "suitcase", "umbrella", "bottle", "cell phone", "sports ball",
                     "skateboard", "chair", "bench", "dining table", "potted plant", "fire hydrant",
-                    "parking meter"],
+                    "parking meter",
+                    # indoors (hallways, offices, the venue)
+                    "laptop", "tv", "couch", "bed", "refrigerator", "toilet", "sink", "oven"],
         "signal_classes": ["traffic light", "stop sign"],  # detected and read, never treated as obstacles
         "step_warning": True,
         "danger_zone": False,
