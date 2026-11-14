@@ -20,8 +20,28 @@ from occhio.app import App, parse_key_script  # noqa: F401  (parse_key_script re
 
 
 def parse_source(value: str) -> int | str:
-    """'0' / '1' -> camera index; anything else -> video file path."""
+    """'0' / '1' -> camera number; 'iphone' -> found by name later; anything else -> video file path."""
     return int(value) if value.isdigit() else value
+
+
+def resolve_source(source: int | str) -> int | str | None:
+    """'iphone' (or any camera name part after 'cam:') -> its camera number; None if not found."""
+    from occhio.cameras import find_camera, list_cameras
+
+    if isinstance(source, str) and (source.lower() == "iphone" or source.lower().startswith("cam:")):
+        name = "iphone" if source.lower() == "iphone" else source[4:]
+        cameras = list_cameras()
+        index = find_camera(name, cameras)
+        if index is None:
+            print(f"[occhio] no camera named like {name!r}. Cameras found: "
+                  + (", ".join(f"{i} = {n}" for i, n in cameras) or "none (is ffmpeg installed?)"), file=sys.stderr)
+            if name == "iphone":
+                print("[occhio] iPhone checklist: iOS 16+ and macOS 13+, same Apple ID as the Mac, Wi-Fi and Bluetooth on, "
+                      "iPhone locked, near the Mac and not in use by another app. Then try again.", file=sys.stderr)
+            return None
+        print(f"[occhio] using camera {index}: {dict(cameras)[index]}", flush=True)
+        return index
+    return source
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -29,7 +49,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--mode", choices=sorted(PROFILES), default=DEFAULT_MODE,
                         help="profile to use (default: %(default)s)")
     parser.add_argument("--source", type=parse_source, default=0,
-                        help="0 = webcam, 1 = iPhone Continuity Camera, or a video file path")
+                        help="camera number (0 = built-in), 'iphone' (finds the Continuity Camera by name), "
+                             "'cam:NAME', or a video file path")
+    parser.add_argument("--list-cameras", action="store_true", help="show the cameras with their numbers and exit")
+    parser.add_argument("--rotate", type=int, choices=[0, 90, 180, 270], default=0,
+                        help="rotate the camera image, e.g. 90 for an iPhone worn upright on the chest")
     parser.add_argument("--no-voice", action="store_true", help="disable speech and beeps")
     parser.add_argument("--no-beeps", action="store_true", help="keep speech, no beeps (key b toggles them)")
     parser.add_argument("--lang", choices=LANGUAGES, default=None,
@@ -55,7 +79,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    return App(parse_args(argv)).run()
+    args = parse_args(argv)
+    if args.list_cameras:
+        from occhio.cameras import list_cameras
+        cameras = list_cameras()
+        for index, name in cameras:
+            print(f"{index}: {name}")
+        if not cameras:
+            print("no cameras found (the names come from ffmpeg: brew install ffmpeg)")
+        return 0
+    source = resolve_source(args.source)
+    if source is None:
+        return 1
+    args.source = source
+    return App(args).run()
 
 
 if __name__ == "__main__":

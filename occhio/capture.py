@@ -36,8 +36,10 @@ class CameraStream:
     Meant for a single consumer (the main loop).
     """
 
-    def __init__(self, source: int | str, width: int = 1280, height: int = 720) -> None:
+    def __init__(self, source: int | str, width: int = 1280, height: int = 720, rotate: int = 0) -> None:
         self.source = source
+        self._rotate = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180,
+                        270: cv2.ROTATE_90_COUNTERCLOCKWISE}.get(int(rotate) % 360)
         self.is_file = isinstance(source, str)
         if self.is_file:
             self._cap = cv2.VideoCapture(source)
@@ -110,6 +112,8 @@ class CameraStream:
                 ok, image = self._cap.read()
                 if not ok:
                     break  # end of file or camera unplugged
+                if self._rotate is not None:  # e.g. an iPhone worn upright on the chest
+                    image = cv2.rotate(image, self._rotate)
                 frame = Frame(image=image, index=self._grabbed, timestamp=time.perf_counter())
                 self._grabbed += 1
                 with self._cond:

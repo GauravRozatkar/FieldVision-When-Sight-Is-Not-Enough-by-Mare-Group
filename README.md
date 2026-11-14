@@ -98,6 +98,20 @@ python main.py --source demo.mp4 --simulate-keys "25.3:d,27.1:m"
 **Record a real test once, replay it many times:** `python main.py --source 0 --record walk.mp4`,
 then `python main.py --source walk.mp4`.
 
+## iPhone as the camera (Continuity Camera)
+
+The iPhone is the eye (worn on the chest), the Mac does the AI (in a backpack or on a table).
+Needs iOS 16+ and macOS 13+, the same Apple ID on both, Wi-Fi and Bluetooth on.
+
+```bash
+python main.py --list-cameras                      # shows e.g. "2: Mario's iPhone Camera"
+python main.py --source iphone                     # finds the iPhone by name (numbers change!)
+python main.py --source iphone --rotate 90         # iPhone worn upright: use 270 if the image is upside down
+```
+
+Lock the iPhone and hold it near the Mac; the first time, macOS may ask which camera to use.
+Do not use `--source 1`: on a MacBook that is usually the "Desk View" camera, not the iPhone.
+
 ## Controls
 
 | Key | Action |

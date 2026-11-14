@@ -184,11 +184,14 @@ class SpatialReasoner:
         self.profile = profile
 
     # ------------------------------------------------------------- geometry
-    def focal_px(self, frame_w: int) -> float:
+    def focal_px(self, frame_w: int, frame_h: int | None = None) -> float:
+        """Focal length in pixels. hfov_deg is the field of view across the *long* side of the
+        image, so an upright (portrait) phone camera gets the same, correct focal length."""
         cal = self.calibration
         if cal.focal_px and cal.frame_width:
             return cal.focal_px * frame_w / cal.frame_width
-        return (frame_w / 2) / math.tan(math.radians(self.hfov_deg / 2))
+        long_side = max(frame_w, frame_h or 0)
+        return (long_side / 2) / math.tan(math.radians(self.hfov_deg / 2))
 
     def is_cut(self, box: BBox, frame_shape: tuple[int, int]) -> bool:
         """True when the box touches the top or bottom edge: its height is not the object's."""
@@ -198,9 +201,9 @@ class SpatialReasoner:
 
     def size_distance(self, cls_name: str, box: BBox, frame_shape: tuple[int, int]) -> float | None:
         """Distance from box size: f * real_height / pixel_height (width for cut-off people)."""
-        _, fw = frame_shape
+        fh, fw = frame_shape
         x1, y1, x2, y2 = box
-        f = self.focal_px(fw)
+        f = self.focal_px(fw, fh)
         if self.is_cut(box, frame_shape) and cls_name == "person":
             width = x2 - x1
             return f * self.person_width_m / width if width > 1 else None
@@ -216,7 +219,7 @@ class SpatialReasoner:
         below = box[3] - fh / 2
         if below <= 2:
             return None  # at or above the horizon: not on the floor in front of us
-        return self.camera_height_m * self.focal_px(fw) / below
+        return self.camera_height_m * self.focal_px(fw, fh) / below
 
     def is_full_body_person(self, cls_name: str, box: BBox, frame_shape: tuple[int, int]) -> bool:
         fh, fw = frame_shape
@@ -253,7 +256,7 @@ class SpatialReasoner:
         options: list[tuple[float, str]] = []
         real_h = self.heights_m.get(track.cls_name)
         if real_h is not None and box[3] - box[1] > 1:
-            options.append((self.focal_px(frame_shape[1]) * real_h / (box[3] - box[1]), "size"))
+            options.append((self.focal_px(frame_shape[1], frame_shape[0]) * real_h / (box[3] - box[1]), "size"))
         if size_d is not None:
             options.append((size_d, "size"))  # shoulder width for people
         if disparity is not None and cal.depth_k:
@@ -271,7 +274,7 @@ class SpatialReasoner:
     def update(self, tracks: Iterable[Track], depth: DepthFrame | None,
                frame_shape: tuple[int, int], now: float) -> list[SpatialInfo]:
         fh, fw = frame_shape
-        focal = self.focal_px(fw)
+        focal = self.focal_px(fw, fh)
         infos: list[SpatialInfo] = []
         alive: set[int] = set()
         for track in tracks:

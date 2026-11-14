@@ -30,7 +30,7 @@ from occhio.depth import DepthEstimator, load_depth_anything
 from occhio.detector import Detector
 from occhio.ground import StepDetector
 from occhio.hud import (AMBER, BLUE, CAM_H, CAM_W, GREEN, RED, YELLOW, HudState, Label, Nearby, compose,
-                        draw_light, draw_zone, to_camera_norm, track_label)
+                        draw_light, draw_zone, fit_geometry, to_camera_norm, track_label)
 from occhio.metrics import FpsCounter, MetricsLogger, StageTimes
 from occhio.overlay import GREY, _dashed_rect, draw_corridor
 from occhio.power import MotionGate
@@ -190,7 +190,10 @@ class App:
             return
         pos = to_camera_norm(x, y, (CAM_H, CAM_W))
         if event == cv2.EVENT_LBUTTONDOWN and pos is not None:
-            self.zone.add_point(*pos)
+            s, ox, oy, w, h = fit_geometry(*self._frame_shape)  # window -> frame fractions
+            fx, fy = (pos[0] * CAM_W - ox) / w, (pos[1] * CAM_H - oy) / h
+            if 0 <= fx <= 1 and 0 <= fy <= 1:
+                self.zone.add_point(fx, fy)
         elif event == cv2.EVENT_RBUTTONDOWN:
             self.zone.close_or_clear()
 
@@ -282,7 +285,7 @@ class App:
     def run(self) -> int:
         args = self.args
         try:
-            stream = CameraStream(args.source).start()
+            stream = CameraStream(args.source, rotate=getattr(args, "rotate", 0)).start()
         except RuntimeError as exc:
             print(f"[occhio] {exc}", file=sys.stderr)
             self.close()
@@ -408,13 +411,22 @@ class App:
         return name[:1].upper() + name[1:]
 
     def draw(self, image: np.ndarray, danger_ids: set[int], fps: float, stages: StageTimes) -> None:
-        view = cv2.resize(image, (CAM_W, CAM_H), interpolation=cv2.INTER_LINEAR)  # AREA costs ~2-5 ms here
-        scale = CAM_W / image.shape[1]
+        fh, fw = image.shape[:2]
+        scale, ox, oy, vw, vh = fit_geometry(fh, fw)  # portrait phones get side bars, never stretched
+        if (vw, vh) == (CAM_W, CAM_H):
+            view = cv2.resize(image, (CAM_W, CAM_H), interpolation=cv2.INTER_LINEAR)  # AREA costs ~2-5 ms here
+        else:
+            view = np.full((CAM_H, CAM_W, 3), 16, dtype=np.uint8)
+            view[oy:oy + vh, ox:ox + vw] = cv2.resize(image, (vw, vh), interpolation=cv2.INTER_LINEAR)
+
+        def to_view(points):
+            return [(int(round(x * scale)) + ox, int(round(y * scale)) + oy) for x, y in points]
+
         warn = float(self.profile["warn_distance_m"])
-        draw_corridor(view, corridor_polygon(self.profile["corridor"], (CAM_H, CAM_W)), colour=(210, 180, 120),
+        draw_corridor(view, to_view(corridor_polygon(self.profile["corridor"], (fh, fw))), colour=(210, 180, 120),
                       alpha=0.07, thickness=1)
         if self.profile.get("danger_zone"):
-            draw_zone(view, self.zone.pixels((CAM_H, CAM_W)), self.zone.closed, bool(self.zone.inside))
+            draw_zone(view, to_view(self.zone.pixels((fh, fw))), self.zone.closed, bool(self.zone.inside))
 
         labels: list[Label] = []
         info_by_id = {i.track_id: i for i in self.infos}
@@ -422,8 +434,10 @@ class App:
         for t in self.tracks:
             if t.cls_name not in obstacles:
                 continue
-            x1, y1, x2, y2 = (int(round(c * scale)) for c in t.box)
-            x1, x2, y1, y2 = max(0, x1), min(CAM_W - 1, x2), max(0, y1), min(CAM_H - 1, y2)
+            bx1, by1, bx2, by2 = t.box
+            x1, y1, x2, y2 = (int(round(bx1 * scale)) + ox, int(round(by1 * scale)) + oy,
+                              int(round(bx2 * scale)) + ox, int(round(by2 * scale)) + oy)
+            x1, x2, y1, y2 = max(ox, x1), min(ox + vw - 1, x2), max(oy, y1), min(oy + vh - 1, y2)
             if x2 <= x1 or y2 <= y1:
                 continue
             info = info_by_id.get(t.track_id)
@@ -449,7 +463,9 @@ class App:
                 text += f"   #{t.track_id} {t.conf:.2f}"
             labels.append(track_label(x1, y1, text, colour, CAM_H))
         if self.traffic.box is not None:
-            lx, ly, lcol = draw_light(view, self.traffic.box, self.traffic.colour, scale)
+            lb = self.traffic.box
+            lx, ly, lcol = draw_light(view, (lb[0] * scale + ox, lb[1] * scale + oy, lb[2] * scale + ox,
+                                             lb[3] * scale + oy), self.traffic.colour, 1.0)
             if self.traffic.colour:
                 labels.append(track_label(lx, ly, self.ui[self.traffic.colour], lcol, CAM_H))
 

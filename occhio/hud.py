@@ -339,6 +339,17 @@ def track_label(x1: int, y1: int, text: str, colour: tuple[int, int, int], frame
     return Label(x1 + 6, y, text, (255, 255, 255), 14, "Semibold", pill=colour)
 
 
+def fit_geometry(frame_h: int, frame_w: int) -> tuple[float, int, int, int, int]:
+    """How a frame fits the camera area without stretching: (scale, x offset, y offset, w, h).
+
+    Landscape 16:9 fills it exactly; an upright phone image is shown in the middle
+    with dark bars left and right.
+    """
+    s = min(CAM_W / frame_w, CAM_H / frame_h)
+    w, h = int(round(frame_w * s)), int(round(frame_h * s))
+    return s, (CAM_W - w) // 2, (CAM_H - h) // 2, w, h
+
+
 def to_camera_norm(x: int, y: int, cam_shape: tuple[int, int]) -> tuple[float, float] | None:
     """Window pixel -> (x, y) as fractions of the camera image, or None if outside it."""
     ch, cw = cam_shape
