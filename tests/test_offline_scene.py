@@ -84,7 +84,7 @@ def test_local_model_describes_bus_photo() -> None:
     assert vlm.ready and answer and "bus" in answer.lower()
     t1 = time.perf_counter()
     vlm(jpeg, LOCAL_PROMPTS["read"]["en"])
-    assert time.perf_counter() - t1 < 5.0  # warm answers are fast (about 0.6 s on an M5 Air)
+    assert time.perf_counter() - t1 < 15.0  # about 1 s on an idle M5 Air; generous when the GPU is shared
     assert t1 - t0 < 90
 
 

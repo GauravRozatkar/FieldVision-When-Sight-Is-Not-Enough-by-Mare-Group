@@ -336,9 +336,10 @@ def test_hud_compose_and_mouse_mapping() -> None:
                   nearby=[Nearby("Person", "ahead", 1.0, (60, 60, 230))],
                   recent=[("10:00:00", "Person ahead, 1 metre", True)], keys=[("d", "Describe"), ("q", "Quit")],
                   labels=[Label(10, TOP_H + 10, "Person  1.0 m", pill=(60, 60, 230))])
+    compose(cam, st)  # the first frame loads the fonts; time a normal one
     t0 = time.perf_counter()
     out = compose(cam, st)
-    assert time.perf_counter() - t0 < 0.2
+    assert time.perf_counter() - t0 < 0.2  # ~2 ms normally
     assert out.shape[1] > CAM_W and out.shape[0] > CAM_H
     assert to_camera_norm(CAM_W // 2, TOP_H + CAM_H // 2, (CAM_H, CAM_W)) == (0.5, 0.5)
     assert to_camera_norm(CAM_W + 10, TOP_H + 10, (CAM_H, CAM_W)) is None  # click on the side panel
