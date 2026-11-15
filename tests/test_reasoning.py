@@ -488,3 +488,21 @@ def test_singular_metre() -> None:
     assert render(STREET, "en", "ahead", "person", 0.9) == "Person ahead, 1 metre"
     assert render(STREET, "it", "ahead", "person", 2.0) == "Persona davanti, 2 metri"
     assert render(INDUSTRIAL, "it", "ahead", "person", 1.0) == "Attenzione: persona a 1 metro"
+
+
+# ------------------------------------------------ phone-test feedback (15 Nov)
+def test_still_furniture_is_never_coming() -> None:
+    """Walking toward a table makes it 'approach' in the image; it must not be 'coming from the left'."""
+    p = PriorityPlanner(STREET, "it")
+    msg = p.plan([info(dist=2.5, approach=0.8, side="left", cls="dining table")], OK, 0.0)
+    assert msg is not None and "in arrivo" not in msg.text and msg.text.startswith("Tavolo a sinistra")
+    p = PriorityPlanner(STREET, "en")
+    msg = p.plan([info(dist=2.5, approach=0.8, side="left", cls="person")], OK, 0.0)
+    assert msg is not None and msg.text == "Person coming from the left"
+
+
+def test_collision_warning_names_the_object() -> None:
+    assert render(STREET, "it", "ttc", "person", ttc_s=2.2) == "Persona davanti, collisione tra 2 secondi"
+    assert render(STREET, "it", "ttc", "car", ttc_s=0.9) == "Auto davanti, collisione tra un secondo"
+    assert render(STREET, "en", "ttc", "person", ttc_s=0.9) == "Person ahead, collision in one second"
+    assert render(INDUSTRIAL, "it", "ttc", "truck", ttc_s=3.0) == "Camion davanti, collisione tra 3 secondi. Stop."

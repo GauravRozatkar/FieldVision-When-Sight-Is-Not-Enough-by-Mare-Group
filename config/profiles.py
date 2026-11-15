@@ -71,7 +71,7 @@ OBJECTS_PLURAL: dict[str, dict[str, str]] = {
            "oven": "ovens", "obstacle": "obstacles"},
 }
 NUMBER_WORDS: dict[str, dict[int, str]] = {  # counts in the instant scene summary (digits above)
-    "it": {},
+    "it": {2: "due", 3: "tre", 4: "quattro", 5: "cinque"},  # "1" stays a digit: "uno/una" depends on gender
     "en": {1: "one", 2: "two", 3: "three", 4: "four", 5: "five"},
 }
 SIDE_PHRASE: dict[str, dict[str, str]] = {  # where things are, in the instant scene summary
@@ -144,8 +144,8 @@ PROFILES: dict[str, Profile] = {
             "ahead": "{obj} davanti, {dist} {unit}",
             "side": "{obj} a {side}, {dist} {unit}",
             "approach": "{obj} in arrivo da {side}",
-            "ttc": "Collisione tra {ttc} secondi",
-            "ttc_one": "Collisione tra un secondo",
+            "ttc": "{obj} davanti, collisione tra {ttc} secondi",
+            "ttc_one": "{obj} davanti, collisione tra un secondo",
             "clear": "Strada libera",
             "unreliable": "Visibilità scarsa, guida non affidabile",
             "mode": "Modalità strada",
@@ -170,8 +170,8 @@ PROFILES: dict[str, Profile] = {
             "ahead": "{obj} ahead, {dist} {unit}",
             "side": "{obj} on {side}, {dist} {unit}",
             "approach": "{obj} coming from {side}",
-            "ttc": "Collision in {ttc} seconds",
-            "ttc_one": "Collision in one second",
+            "ttc": "{obj} ahead, collision in {ttc} seconds",
+            "ttc_one": "{obj} ahead, collision in one second",
             "clear": "Path clear",
             "unreliable": "Poor visibility, guidance unreliable",
             "mode": "Street mode",
@@ -224,8 +224,8 @@ PROFILES: dict[str, Profile] = {
             "ahead": "Attenzione: {obj} a {dist} {unit}",
             "side": "Attenzione: {obj} a {side}, {dist} {unit}",
             "approach": "{obj} in arrivo da {side}. Stop.",
-            "ttc": "Stop. Collisione tra {ttc} secondi",
-            "ttc_one": "Stop. Collisione tra un secondo",
+            "ttc": "{obj} davanti, collisione tra {ttc} secondi. Stop.",
+            "ttc_one": "{obj} davanti, collisione tra un secondo. Stop.",
             "clear": "Area libera",
             "unreliable": "Telecamera non affidabile, fermati e verifica",
             "mode": "Modalità industriale",
@@ -250,8 +250,8 @@ PROFILES: dict[str, Profile] = {
             "ahead": "Warning: {obj} at {dist} {unit}",
             "side": "Warning: {obj} on {side}, {dist} {unit}",
             "approach": "{obj} coming from {side}. Stop.",
-            "ttc": "Stop. Collision in {ttc} seconds",
-            "ttc_one": "Stop. Collision in one second",
+            "ttc": "{obj} ahead, collision in {ttc} seconds. Stop.",
+            "ttc_one": "{obj} ahead, collision in one second. Stop.",
             "clear": "Area clear",
             "unreliable": "Camera unreliable, stop and check",
             "mode": "Industrial mode",

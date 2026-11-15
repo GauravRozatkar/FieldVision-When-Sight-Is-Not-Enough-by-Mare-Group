@@ -52,10 +52,10 @@ def test_outside_corridor_is_never_danger() -> None:
 def test_ttc_message_below_3s() -> None:
     p = PriorityPlanner(STREET, "it")
     msg = p.plan([info(dist=2.8, approach=1.1)], OK, 0.0)  # ttc 2.5 s
-    assert msg is not None and msg.text == "Collisione tra 3 secondi" and msg.kind == "ttc" and not msg.urgent
+    assert msg is not None and msg.text == "Persona davanti, collisione tra 3 secondi" and msg.kind == "ttc" and not msg.urgent
     p2 = PriorityPlanner(STREET, "it")
     urgent = p2.plan([info(dist=1.6, approach=1.6)], OK, 0.0)  # ttc 1 s, just outside the danger distance
-    assert urgent is not None and urgent.urgent and urgent.text == "Collisione tra un secondo"
+    assert urgent is not None and urgent.urgent and urgent.text == "Persona davanti, collisione tra un secondo"
     inside = PriorityPlanner(STREET, "it").plan([info(dist=1.2, approach=1.6)], OK, 0.0)
     assert inside.urgent and inside.text == "Persona davanti, 1 metro"  # inside 1.5 m: say where, not when
 
@@ -80,7 +80,7 @@ def test_object_outside_corridor_does_not_block_clear() -> None:
 
 def test_industrial_lines() -> None:
     ind = PROFILES["industrial"]
-    assert render(ind, "it", "ttc", ttc_s=2.2) == "Stop. Collisione tra 2 secondi"
+    assert render(ind, "it", "ttc", "person", ttc_s=2.2) == "Persona davanti, collisione tra 2 secondi. Stop."
     assert render(ind, "it", "mode") == "Modalità industriale"
     assert render(STREET, "it", "mode") == "Modalità strada"
 

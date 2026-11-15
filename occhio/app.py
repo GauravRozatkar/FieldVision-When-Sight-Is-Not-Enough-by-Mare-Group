@@ -634,7 +634,7 @@ class App:
               + (f" | depth {depth_ms:4.0f} ms" if depth_ms is not None else "")
               + f" | rel {self.rel.score:.2f} {self.rel.reason}"
               + f" | tracks C{counts[TrackStatus.CONFIRMED]} U{counts[TrackStatus.UNCERTAIN]}"
-              f" H{counts[TrackStatus.HIDDEN]}" + (" | eco" if self.gate.eco else "") + f" | dropped {dropped}",
+              f" H{counts[TrackStatus.HIDDEN]}" + (" | eco" if self.gate.eco else "") + f" | skipped {dropped}",
               flush=True)
         self.metrics.row(now, fps, means, depth_ms, self.rel.score, counts[TrackStatus.CONFIRMED], self.gate.eco)
 

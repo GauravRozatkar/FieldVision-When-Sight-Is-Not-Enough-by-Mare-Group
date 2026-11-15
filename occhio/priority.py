@@ -118,7 +118,9 @@ class PriorityPlanner:
 
     def message_for(self, info: SpatialInfo) -> Message:
         danger = self.is_danger(info)
-        approaching = info.approach_mps >= float(self.profile["approach_min_mps"])
+        # Only things that move by themselves are "coming": a table gets closer only because the user walks.
+        moves_itself = CATEGORY.get(info.cls_name) in ("vehicle", "living")
+        approaching = moves_itself and info.approach_mps >= float(self.profile["approach_min_mps"])
         outside_danger = info.distance_m is not None and info.distance_m >= float(self.profile["danger_distance_m"])
         if info.in_corridor and info.ttc_s is not None and info.ttc_s < self.ttc_warn_s and outside_danger:
             key, kind = "ttc", "danger" if danger else "ttc"
