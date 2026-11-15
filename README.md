@@ -1,4 +1,4 @@
-# Occhio — the eyes that talk
+# Lumina — the eyes that talk
 
 **Real-time assistive vision: a camera that tells blind people, by voice, only what matters around them,
 and the same engine keeps factory and hangar workers safe.**
@@ -11,7 +11,7 @@ The Big Hack 2026 · Mare Group FieldVision challenge.
 A white cane senses about 1 metre ahead, at ground level. It cannot warn about a bike coming fast,
 a person walking toward you, a car backing out, or a horn behind you.
 
-## What Occhio does
+## What Lumina does
 
 A webcam or iPhone watches the way ahead. AI detects and tracks people and vehicles, works out
 direction, distance, speed and time to collision, and **speaks only the most dangerous thing**:
