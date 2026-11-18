@@ -183,4 +183,4 @@ sound direction, and GPS navigation.
 
 ## Team
 
-_Names and roles here._
+Names and roles here.
